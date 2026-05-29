@@ -26,4 +26,4 @@ jobs:
           gradle-version: 8.10.2
 
       - name: Build debug APK
-        run: gradle assembleDebug
+        run: gradle -Pandroid.useAndroidX=true -Pandroid.nonTransitiveRClass=true assembleDebug
