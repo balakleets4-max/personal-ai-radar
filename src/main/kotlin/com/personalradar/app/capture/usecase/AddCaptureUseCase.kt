@@ -40,18 +40,16 @@ class AddCaptureUseCase(
         val language = languageDetector.detect(cleanText)
         if (language == LanguageCode.UNKNOWN) warnings.add(AddCaptureWarning.UnknownLanguage)
 
-        val parserResult: ParserResult
-        val analysisDraft: AnalysisDraft
-        val parserFailed: Throwable?
+        lateinit var parserResult: ParserResult
+        lateinit var analysisDraft: AnalysisDraft
+        var parserFailed: Throwable? = null
         try {
             parserResult = parserEngine.parse(cleanText, language, now)
             analysisDraft = analysisEngine.analyze(cleanText, language, parserResult, now)
-            parserFailed = null
         } catch (t: Throwable) {
             parserFailed = t
             warnings.add(AddCaptureWarning.ParserFailedButCaptureSaved(t.message ?: "Unknown parser error"))
-            val emptyParser = ParserResult(language = language, entities = emptyList())
-            parserResult = emptyParser
+            parserResult = ParserResult(language = language, entities = emptyList())
             analysisDraft = AnalysisDraft(
                 mainIntent = IntentType.UNKNOWN,
                 secondaryIntent = null,
