@@ -3,7 +3,7 @@ package com.personalradar.app.ai
 import android.content.Context
 
 class AiSettingsStore(context: Context) {
-    private val prefs = context.getSharedPreferences("ai_settings", Context.MODE_PRIVATE)
+	    private val prefs = context.getSharedPreferences("ai_settings", Context.MODE_PRIVATE)
 
     fun getSettings(): AiSettings {
         val rawKey = prefs.getString(KEY_API_KEY, "") ?: ""
@@ -70,7 +70,6 @@ class AiSettingsStore(context: Context) {
         private const val KEY_ALLOW_CONVERSATIONS = "allow_conversations"
     }
 }
-
 data class AiSettings(
     val cloudAnalysisEnabled: Boolean,
     val provider: String,
@@ -84,3 +83,4 @@ data class AiSettings(
     val hasCatalogId: Boolean = catalogId.isNotBlank()
     val canUseCloud: Boolean = cloudAnalysisEnabled && hasApiKey && hasCatalogId
 }
+
