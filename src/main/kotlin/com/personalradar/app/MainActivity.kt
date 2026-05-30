@@ -125,6 +125,7 @@ class MainActivity : Activity() {
             addView(saveButton, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(status, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(buildSourcesSection(), ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            addView(buildAiSettingsSection(), ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(TextView(this@MainActivity).apply {
                 text = "Радар"
                 textSize = 23f
@@ -166,6 +167,87 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(0, 14, 0, 8) }
         }
+    }
+
+    private fun buildAiSettingsSection(): LinearLayout {
+        val store = AppContainer.get(applicationContext).aiSettingsStore
+        val settings = store.getSettings()
+        val apiKeyInput = EditText(this).apply {
+            hint = if (settings.hasApiKey) "API-ключ сохранён. Вставьте новый для замены." else "Вставьте API-ключ Yandex AI"
+            minLines = 1
+            setSingleLine(true)
+            setPadding(18, 14, 18, 14)
+        }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = softPanelBackground()
+            setPadding(20, 18, 20, 18)
+            addView(TextView(this@MainActivity).apply {
+                text = "ИИ-анализ"
+                textSize = 21f
+                typeface = Typeface.DEFAULT_BOLD
+                setPadding(0, 0, 0, 6)
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = aiSettingsSummary()
+                textSize = 14f
+                setTextColor(Color.rgb(80, 80, 88))
+                setPadding(0, 0, 0, 10)
+            })
+            addView(apiKeyInput, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            addView(Button(this@MainActivity).apply {
+                text = if (settings.cloudAnalysisEnabled) "Выключить облачный анализ" else "Включить облачный анализ"
+                setOnClickListener {
+                    val current = store.getSettings()
+                    if (!current.cloudAnalysisEnabled && !current.hasApiKey) {
+                        status.text = "Сначала сохраните API-ключ Yandex AI."
+                    } else {
+                        store.setCloudAnalysisEnabled(!current.cloudAnalysisEnabled)
+                        rebuildScreenAfterSettingsChange(
+                            if (current.cloudAnalysisEnabled) "Облачный ИИ-анализ выключен." else "Облачный ИИ-анализ включён."
+                        )
+                    }
+                }
+            }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            addView(Button(this@MainActivity).apply {
+                text = "Сохранить API-ключ"
+                setOnClickListener {
+                    val key = apiKeyInput.text.toString().trim()
+                    if (key.isBlank()) {
+                        status.text = "API-ключ пустой. Вставьте ключ Yandex AI."
+                    } else {
+                        store.saveApiKey(key)
+                        rebuildScreenAfterSettingsChange("API-ключ Yandex AI сохранён на устройстве.")
+                    }
+                }
+            }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            addView(Button(this@MainActivity).apply {
+                text = "Удалить API-ключ"
+                setOnClickListener {
+                    store.clearApiKey()
+                    store.setCloudAnalysisEnabled(false)
+                    rebuildScreenAfterSettingsChange("API-ключ удалён. Облачный анализ выключен.")
+                }
+            }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        }.also { panel ->
+            panel.layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 8, 0, 8) }
+        }
+    }
+
+    private fun aiSettingsSummary(): String {
+        val settings = AppContainer.get(applicationContext).aiSettingsStore.getSettings()
+        val cloud = if (settings.cloudAnalysisEnabled) "включён" else "выключен"
+        val key = if (settings.hasApiKey) "ключ сохранён" else "ключ не задан"
+        return "Провайдер: ${settings.provider}. Облачный анализ: $cloud. API: $key. По умолчанию данные не отправляются наружу без включения владельцем."
+    }
+
+    private fun rebuildScreenAfterSettingsChange(message: String) {
+        setContentView(buildScreen())
+        status.text = message
+        refreshRadarCards()
     }
 
     private fun sourceRow(title: String, state: String, description: String): LinearLayout {
@@ -399,6 +481,7 @@ class MainActivity : Activity() {
             .replace("язык: RU; ", "")
             .replace("язык: EN; ", "")
             .replace("тип: ", "")
+            .replace("; действие найдено", "; действие")
             .replace("; есть сигнал действия", "; действие")
             .replace("; есть сигнал времени/напоминания", "; время")
             .replace("; когда: ", " · когда: ")
