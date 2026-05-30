@@ -48,12 +48,12 @@ class MainActivity : Activity() {
         }
         status = TextView(this).apply {
             text = "Готово. Введите мысль, задачу, риск или напоминание."
-            textSize = 16f
-            setPadding(24, 16, 24, 16)
+            textSize = 15f
+            setPadding(18, 12, 18, 12)
         }
         radarList = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, 16, 0, 24)
+            setPadding(0, 12, 0, 18)
         }
         val saveButton = Button(this).apply {
             text = "Сохранить захват"
@@ -71,35 +71,43 @@ class MainActivity : Activity() {
             text = "Готовые (0)"
             setOnClickListener { switchMode(RadarCardViewMode.DONE) }
         }
-        val modeButtons = LinearLayout(this).apply {
+        val firstModeRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            addView(activeButton)
-            addView(hiddenButton)
-            addView(doneButton)
+            addView(activeButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(hiddenButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        val secondModeRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(doneButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+        val modeButtons = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(firstModeRow, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            addView(secondModeRow, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 32, 24, 32)
+            setPadding(22, 28, 22, 28)
             addView(TextView(this@MainActivity).apply {
                 text = "Личный ИИ-Радар"
-                textSize = 28f
+                textSize = 26f
                 typeface = Typeface.DEFAULT_BOLD
-                setPadding(0, 0, 0, 12)
+                setPadding(0, 0, 0, 8)
             })
             addView(TextView(this@MainActivity).apply {
                 text = "Запишите обычной фразой то, что нужно не потерять."
-                textSize = 16f
+                textSize = 15f
                 setTextColor(Color.rgb(80, 80, 88))
-                setPadding(0, 0, 0, 20)
+                setPadding(0, 0, 0, 14)
             })
             addView(input, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(saveButton, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(status, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(TextView(this@MainActivity).apply {
                 text = "Радар"
-                textSize = 24f
+                textSize = 23f
                 typeface = Typeface.DEFAULT_BOLD
-                setPadding(0, 24, 0, 8)
+                setPadding(0, 18, 0, 6)
             })
             addView(modeButtons, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(radarList, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -128,9 +136,9 @@ class MainActivity : Activity() {
     private fun switchMode(mode: RadarCardViewMode) {
         viewMode = mode
         status.text = when (mode) {
-            RadarCardViewMode.ACTIVE -> "Показан активный Радар."
-            RadarCardViewMode.HIDDEN -> "Показаны скрытые карточки."
-            RadarCardViewMode.DONE -> "Показаны готовые карточки."
+            RadarCardViewMode.ACTIVE -> "Активный Радар."
+            RadarCardViewMode.HIDDEN -> "Скрытые карточки."
+            RadarCardViewMode.DONE -> "Готовые карточки."
         }
         refreshRadarCards()
     }
@@ -200,8 +208,8 @@ class MainActivity : Activity() {
     private fun cardBackground(): GradientDrawable {
         return GradientDrawable().apply {
             setColor(Color.rgb(255, 255, 255))
-            setStroke(2, Color.rgb(210, 210, 220))
-            cornerRadius = 24f
+            setStroke(2, Color.rgb(218, 218, 226))
+            cornerRadius = 20f
         }
     }
 
@@ -214,13 +222,23 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun compactWhy(text: String): String {
+        return text
+            .replace("язык: RU; ", "")
+            .replace("язык: EN; ", "")
+            .replace("тип: ", "")
+            .replace("; есть сигнал действия", "; действие")
+            .replace("; есть сигнал времени/напоминания", "; время")
+            .replace("; ", " · ")
+    }
+
     private fun renderCards(cards: List<RadarCardEntity>) {
         radarList.removeAllViews()
         if (cards.isEmpty()) {
             radarList.addView(TextView(this).apply {
                 text = emptyText()
                 textSize = 16f
-                setPadding(0, 16, 0, 16)
+                setPadding(0, 14, 0, 14)
             })
             return
         }
@@ -228,40 +246,33 @@ class MainActivity : Activity() {
             val box = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 background = cardBackground()
-                setPadding(24, 22, 24, 22)
+                setPadding(20, 18, 20, 18)
             }
 
             box.addView(TextView(this).apply {
-                text = typeLabel(card.type)
+                text = "${typeLabel(card.type)} · Приоритет ${card.priority}"
                 textSize = 14f
                 typeface = Typeface.DEFAULT_BOLD
                 setTextColor(Color.rgb(92, 64, 180))
-                setPadding(0, 0, 0, 8)
+                setPadding(0, 0, 0, 6)
             })
             box.addView(TextView(this).apply {
                 text = card.title
-                textSize = 20f
+                textSize = 19f
                 typeface = Typeface.DEFAULT_BOLD
-                setPadding(0, 0, 0, 8)
+                setPadding(0, 0, 0, 6)
             })
             box.addView(TextView(this).apply {
                 text = card.description
-                textSize = 16f
+                textSize = 15f
                 setTextColor(Color.rgb(45, 45, 52))
-                setPadding(0, 0, 0, 12)
-            })
-            box.addView(TextView(this).apply {
-                text = "Почему в Радаре: ${card.whyText}"
-                textSize = 14f
-                setTextColor(Color.rgb(90, 90, 100))
                 setPadding(0, 0, 0, 8)
             })
             box.addView(TextView(this).apply {
-                text = "Приоритет: ${card.priority}"
-                textSize = 14f
-                typeface = Typeface.DEFAULT_BOLD
-                setTextColor(Color.rgb(70, 70, 80))
-                setPadding(0, 0, 0, 12)
+                text = compactWhy(card.whyText)
+                textSize = 13f
+                setTextColor(Color.rgb(90, 90, 100))
+                setPadding(0, 0, 0, 10)
             })
 
             val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -295,7 +306,7 @@ class MainActivity : Activity() {
                 LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply { setMargins(0, 0, 0, 18) }
+                ).apply { setMargins(0, 0, 0, 14) }
             )
         }
     }
