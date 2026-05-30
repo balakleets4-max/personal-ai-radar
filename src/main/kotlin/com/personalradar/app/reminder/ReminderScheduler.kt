@@ -17,6 +17,7 @@ class ReminderScheduler(
 ) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val fallbackTimers = mutableMapOf<Long, Runnable>()
+    private val diagnostics = ReminderDiagnostics(context)
 
     fun canPostNotifications(): Boolean {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
@@ -30,18 +31,27 @@ class ReminderScheduler(
     }
 
     fun schedule(card: RadarCardEntity): ReminderScheduleResult {
-        val dueAt = card.dueAt ?: return ReminderScheduleResult.NotScheduled("В карточке нет времени")
+        val dueAt = card.dueAt
+        if (dueAt == null) {
+            diagnostics.recordNotScheduled(card.id, "В карточке нет времени")
+            return ReminderScheduleResult.NotScheduled("В карточке нет времени")
+        }
+
         val delayMs = dueAt - System.currentTimeMillis()
         if (delayMs <= 0L) {
+            diagnostics.recordNotScheduled(card.id, "Время уже прошло")
             return ReminderScheduleResult.NotScheduled("Время уже прошло")
         }
         if (!canPostNotifications()) {
+            diagnostics.recordNotScheduled(card.id, "Нет разрешения на уведомления")
             return ReminderScheduleResult.NotScheduled("Нет разрешения на уведомления")
         }
 
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val notificationText = buildHumanNotificationText(card)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
             scheduleFallbackTimer(card, delayMs)
+            diagnostics.recordScheduled(card.id, dueAt, notificationText, exact = false)
             return ReminderScheduleResult.Scheduled(dueAt, exact = false)
         }
 
@@ -60,6 +70,7 @@ class ReminderScheduler(
         }
 
         scheduleFallbackTimer(card, delayMs)
+        diagnostics.recordScheduled(card.id, dueAt, notificationText, exact = true)
 
         return ReminderScheduleResult.Scheduled(dueAt, exact = true)
     }
