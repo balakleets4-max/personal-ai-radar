@@ -34,13 +34,13 @@ class MainActivity : Activity() {
 
     private fun buildScreen(): ScrollView {
         input = EditText(this).apply {
-            hint = "Enter Capture / Захват памяти"
+            hint = "Введите захват памяти"
             minLines = 3
             setPadding(24, 24, 24, 24)
         }
 
         status = TextView(this).apply {
-            text = "Ready. Add a Capture to create a Radar card."
+            text = "Готово. Введите мысль, задачу, риск или напоминание."
             textSize = 16f
             setPadding(24, 16, 24, 16)
         }
@@ -51,7 +51,7 @@ class MainActivity : Activity() {
         }
 
         val saveButton = Button(this).apply {
-            text = "Save Capture"
+            text = "Сохранить захват"
             setOnClickListener { saveCapture() }
         }
 
@@ -59,16 +59,21 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 32, 24, 32)
             addView(TextView(this@MainActivity).apply {
-                text = "Personal AI Radar"
-                textSize = 26f
-                setPadding(0, 0, 0, 16)
+                text = "Личный ИИ-Радар"
+                textSize = 28f
+                setPadding(0, 0, 0, 12)
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = "Запишите обычной фразой то, что нужно не потерять."
+                textSize = 16f
+                setPadding(0, 0, 0, 20)
             })
             addView(input, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(saveButton, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(status, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(TextView(this@MainActivity).apply {
-                text = "Radar"
-                textSize = 22f
+                text = "Радар"
+                textSize = 24f
                 setPadding(0, 24, 0, 8)
             })
             addView(radarList, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -89,8 +94,8 @@ class MainActivity : Activity() {
                 }
             } catch (t: Throwable) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, t.message ?: "Capture failed", Toast.LENGTH_LONG).show()
-                    status.text = "Could not save Capture: ${t.message ?: "unknown error"}"
+                    Toast.makeText(this@MainActivity, t.message ?: "Не удалось сохранить захват", Toast.LENGTH_LONG).show()
+                    status.text = "Не удалось сохранить захват: ${t.message ?: "неизвестная ошибка"}"
                 }
             }
         }
@@ -107,15 +112,16 @@ class MainActivity : Activity() {
         radarList.removeAllViews()
         if (cards.isEmpty()) {
             radarList.addView(TextView(this).apply {
-                text = "No Radar cards yet."
+                text = "Активных карточек пока нет."
                 textSize = 16f
+                setPadding(0, 12, 0, 12)
             })
             return
         }
 
         cards.forEach { card ->
             radarList.addView(TextView(this).apply {
-                text = "${card.title}\n${card.description}\nWhy I see this: ${card.whyText}\nPriority: ${card.priority}"
+                text = "${card.title}\n${card.description}\nПочему в Радаре: ${card.whyText}\nПриоритет: ${card.priority}"
                 textSize = 16f
                 setPadding(0, 16, 0, 16)
             })
