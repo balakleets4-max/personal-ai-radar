@@ -188,7 +188,7 @@ class MainActivity : Activity() {
                 setPadding(0, 0, 0, 12)
             })
             addView(sourceRow("Ручной ввод", "включён", "Можно вручную добавить мысль, дело или напоминание."))
-            addView(sourceRow("Голосовой захват", "включён", "Можно сказать мысль или напоминание голосом — аудио не сохраняется."))
+            addView(sourceRow("Голосовой захват", "улучшен", "Можно сказать мысль или напоминание голосом — аудио не сохраняется."))
             addView(sourceRow("Поделиться в Радар", "включено", "Из другого приложения нажмите Поделиться и выберите Личный ИИ-Радар."))
             addView(sourceRow("Уведомления Радара", "частично", "Приложение уже умеет отправлять собственные напоминания."))
             addView(sourceRow("Календарь", "скоро", "Радар сможет читать события календаря с разрешения владельца."))
@@ -375,9 +375,14 @@ class MainActivity : Activity() {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU")
             putExtra(RecognizerIntent.EXTRA_PROMPT, "Скажите мысль, задачу или напоминание")
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 8_000)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2_000)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2_500)
         }
         try {
-            status.text = "Открываю голосовой захват..."
+            status.text = "Открываю голосовой захват. Можно говорить с небольшими паузами."
             startActivityForResult(intent, VOICE_INPUT_REQUEST_CODE)
         } catch (_: ActivityNotFoundException) {
             status.text = "На телефоне нет системного распознавания речи. Можно использовать голосовой ввод клавиатуры."
