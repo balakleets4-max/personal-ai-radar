@@ -2,6 +2,7 @@ package com.personalradar.app.di
 
 import android.content.Context
 import androidx.room.Room
+import com.personalradar.app.ai.AiSettingsStore
 import com.personalradar.app.core.database.AppDatabase
 import com.personalradar.app.quick.CaptureRadarController
 import com.personalradar.app.quick.QuickCaptureRepository
@@ -11,7 +12,8 @@ class AppContainer private constructor(
     val database: AppDatabase,
     val quickCaptureRepository: QuickCaptureRepository,
     val captureRadarController: CaptureRadarController,
-    val reminderScheduler: ReminderScheduler
+    val reminderScheduler: ReminderScheduler,
+    val aiSettingsStore: AiSettingsStore
 ) {
     companion object {
         @Volatile
@@ -32,7 +34,8 @@ class AppContainer private constructor(
             val repository = QuickCaptureRepository(database)
             val controller = CaptureRadarController(database, repository)
             val reminderScheduler = ReminderScheduler(context)
-            return AppContainer(database, repository, controller, reminderScheduler)
+            val aiSettingsStore = AiSettingsStore(context)
+            return AppContainer(database, repository, controller, reminderScheduler, aiSettingsStore)
         }
     }
 }
