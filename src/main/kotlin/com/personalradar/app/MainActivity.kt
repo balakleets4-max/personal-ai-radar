@@ -14,6 +14,7 @@ import com.personalradar.app.di.AppContainer
 import com.personalradar.app.quick.CaptureRadarController
 import com.personalradar.app.quick.CaptureRadarScreenState
 import com.personalradar.app.quick.RadarCardViewMode
+import com.personalradar.app.quick.RadarCounters
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -56,15 +57,15 @@ class MainActivity : Activity() {
             setOnClickListener { saveCapture() }
         }
         activeButton = Button(this).apply {
-            text = "Активные"
+            text = "Активные (0)"
             setOnClickListener { switchMode(RadarCardViewMode.ACTIVE) }
         }
         hiddenButton = Button(this).apply {
-            text = "Скрытые"
+            text = "Скрытые (0)"
             setOnClickListener { switchMode(RadarCardViewMode.HIDDEN) }
         }
         doneButton = Button(this).apply {
-            text = "Готовые"
+            text = "Готовые (0)"
             setOnClickListener { switchMode(RadarCardViewMode.DONE) }
         }
         val modeButtons = LinearLayout(this).apply {
@@ -149,8 +150,11 @@ class MainActivity : Activity() {
 
     private fun refreshRadarCards() {
         CoroutineScope(Dispatchers.IO).launch {
-            val cards = controller.loadRadarCards(viewMode)
-            withContext(Dispatchers.Main) { renderCards(cards) }
+            val snapshot = controller.loadRadarSnapshot(viewMode)
+            withContext(Dispatchers.Main) {
+                renderCounters(snapshot.counters)
+                renderCards(snapshot.cards)
+            }
         }
     }
 
@@ -169,7 +173,14 @@ class MainActivity : Activity() {
 
     private fun renderState(state: CaptureRadarScreenState) {
         status.text = state.message
+        renderCounters(state.counters)
         renderCards(state.cards)
+    }
+
+    private fun renderCounters(counters: RadarCounters) {
+        activeButton.text = "Активные (${counters.active})"
+        hiddenButton.text = "Скрытые (${counters.hidden})"
+        doneButton.text = "Готовые (${counters.done})"
     }
 
     private fun emptyText(): String {
