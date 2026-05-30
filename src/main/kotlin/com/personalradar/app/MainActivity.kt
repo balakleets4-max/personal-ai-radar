@@ -173,7 +173,13 @@ class MainActivity : Activity() {
         val store = AppContainer.get(applicationContext).aiSettingsStore
         val settings = store.getSettings()
         val apiKeyInput = EditText(this).apply {
-            hint = if (settings.hasApiKey) "API-ключ сохранён. Вставьте новый для замены." else "Вставьте API-ключ Yandex AI"
+            hint = if (settings.hasApiKey) "API-ключ сохранён. Вставьте новый для замены." else "Вставьте секретный API-ключ Yandex AI"
+            minLines = 1
+            setSingleLine(true)
+            setPadding(18, 14, 18, 14)
+        }
+        val catalogInput = EditText(this).apply {
+            hint = if (settings.hasCatalogId) "Catalog ID сохранён. Вставьте новый для замены." else "Вставьте Catalog ID Yandex Cloud"
             minLines = 1
             setSingleLine(true)
             setPadding(18, 14, 18, 14)
@@ -189,18 +195,42 @@ class MainActivity : Activity() {
                 setPadding(0, 0, 0, 6)
             })
             addView(TextView(this@MainActivity).apply {
+                text = aiConnectionStatusText()
+                textSize = 16f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(aiConnectionStatusColor())
+                setPadding(0, 0, 0, 8)
+            })
+            addView(TextView(this@MainActivity).apply {
                 text = aiSettingsSummary()
                 textSize = 14f
                 setTextColor(Color.rgb(80, 80, 88))
                 setPadding(0, 0, 0, 10)
             })
             addView(apiKeyInput, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            addView(catalogInput, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            addView(Button(this@MainActivity).apply {
+                text = "Сохранить подключение Yandex AI"
+                setOnClickListener {
+                    val key = apiKeyInput.text.toString().trim()
+                    val catalog = catalogInput.text.toString().trim()
+                    if (key.isBlank() && catalog.isBlank()) {
+                        status.text = "Вставьте секретный API-ключ и Catalog ID."
+                    } else {
+                        if (key.isNotBlank()) store.saveApiKey(key)
+                        if (catalog.isNotBlank()) store.saveCatalogId(catalog)
+                        rebuildScreenAfterSettingsChange("Подключение Yandex AI сохранено на устройстве.")
+                    }
+                }
+            }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(Button(this@MainActivity).apply {
                 text = if (settings.cloudAnalysisEnabled) "Выключить облачный анализ" else "Включить облачный анализ"
                 setOnClickListener {
                     val current = store.getSettings()
                     if (!current.cloudAnalysisEnabled && !current.hasApiKey) {
-                        status.text = "Сначала сохраните API-ключ Yandex AI."
+                        status.text = "Сначала сохраните секретный API-ключ Yandex AI."
+                    } else if (!current.cloudAnalysisEnabled && !current.hasCatalogId) {
+                        status.text = "Сначала сохраните Catalog ID Yandex Cloud."
                     } else {
                         store.setCloudAnalysisEnabled(!current.cloudAnalysisEnabled)
                         rebuildScreenAfterSettingsChange(
@@ -210,23 +240,10 @@ class MainActivity : Activity() {
                 }
             }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(Button(this@MainActivity).apply {
-                text = "Сохранить API-ключ"
+                text = "Удалить подключение Yandex AI"
                 setOnClickListener {
-                    val key = apiKeyInput.text.toString().trim()
-                    if (key.isBlank()) {
-                        status.text = "API-ключ пустой. Вставьте ключ Yandex AI."
-                    } else {
-                        store.saveApiKey(key)
-                        rebuildScreenAfterSettingsChange("API-ключ Yandex AI сохранён на устройстве.")
-                    }
-                }
-            }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            addView(Button(this@MainActivity).apply {
-                text = "Удалить API-ключ"
-                setOnClickListener {
-                    store.clearApiKey()
-                    store.setCloudAnalysisEnabled(false)
-                    rebuildScreenAfterSettingsChange("API-ключ удалён. Облачный анализ выключен.")
+                    store.clearConnectionData()
+                    rebuildScreenAfterSettingsChange("Подключение Yandex AI удалено. Облачный анализ выключен.")
                 }
             }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         }.also { panel ->
@@ -237,11 +254,32 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun aiConnectionStatusText(): String {
+        val settings = AppContainer.get(applicationContext).aiSettingsStore.getSettings()
+        return when {
+            settings.canUseCloud -> "Yandex AI подключён и включён"
+            settings.hasApiKey && settings.hasCatalogId -> "Yandex AI подключён, но облачный анализ выключен"
+            settings.hasApiKey -> "Нужен Catalog ID для Yandex AI"
+            settings.hasCatalogId -> "Нужен секретный API-ключ для Yandex AI"
+            else -> "Yandex AI не подключён"
+        }
+    }
+
+    private fun aiConnectionStatusColor(): Int {
+        val settings = AppContainer.get(applicationContext).aiSettingsStore.getSettings()
+        return when {
+            settings.canUseCloud -> Color.rgb(42, 120, 70)
+            settings.hasApiKey || settings.hasCatalogId -> Color.rgb(160, 100, 30)
+            else -> Color.rgb(90, 90, 100)
+        }
+    }
+
     private fun aiSettingsSummary(): String {
         val settings = AppContainer.get(applicationContext).aiSettingsStore.getSettings()
         val cloud = if (settings.cloudAnalysisEnabled) "включён" else "выключен"
         val key = if (settings.hasApiKey) "ключ сохранён" else "ключ не задан"
-        return "Провайдер: ${settings.provider}. Облачный анализ: $cloud. API: $key. По умолчанию данные не отправляются наружу без включения владельцем."
+        val catalog = if (settings.hasCatalogId) "Catalog ID сохранён" else "Catalog ID не задан"
+        return "Провайдер: ${settings.provider}. Облачный анализ: $cloud. API: $key. $catalog. Данные отправляются наружу только после включения владельцем."
     }
 
     private fun rebuildScreenAfterSettingsChange(message: String) {
