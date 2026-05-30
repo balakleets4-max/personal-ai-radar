@@ -28,3 +28,10 @@ jobs:
 
       - name: Build debug APK
         run: gradle -Pandroid.useAndroidX=true -Pandroid.nonTransitiveRClass=true assembleDebug --stacktrace
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: personal-ai-radar-debug-apk
+          path: build/outputs/apk/debug/*.apk
+          if-no-files-found: error
