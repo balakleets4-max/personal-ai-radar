@@ -1,9 +1,12 @@
 package com.personalradar.app
 
+import android.Manifest
 import android.app.Activity
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Bundle
 import android.view.ViewGroup
 import android.widget.Button
@@ -18,6 +21,7 @@ import com.personalradar.app.quick.CaptureRadarController
 import com.personalradar.app.quick.CaptureRadarScreenState
 import com.personalradar.app.quick.RadarCardViewMode
 import com.personalradar.app.quick.RadarCounters
+import com.personalradar.app.reminder.ReminderScheduleResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -40,6 +44,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         controller = AppContainer.get(applicationContext).captureRadarController
         setContentView(buildScreen())
+        requestNotificationPermissionIfNeeded()
         refreshRadarCards()
     }
 
@@ -118,6 +123,15 @@ class MainActivity : Activity() {
         return ScrollView(this).apply { addView(root) }
     }
 
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val granted = checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIFICATION_PERMISSION_REQUEST_CODE)
+            }
+        }
+    }
+
     private fun saveCapture() {
         val text = input.text.toString()
         CoroutineScope(Dispatchers.IO).launch {
@@ -126,6 +140,7 @@ class MainActivity : Activity() {
                 withContext(Dispatchers.Main) {
                     input.setText("")
                     renderState(state)
+                    scheduleCreatedReminder(state)
                 }
             } catch (t: Throwable) {
                 withContext(Dispatchers.Main) {
@@ -133,6 +148,16 @@ class MainActivity : Activity() {
                     status.text = "Не удалось сохранить захват: ${t.message ?: "неизвестная ошибка"}"
                 }
             }
+        }
+    }
+
+    private fun scheduleCreatedReminder(state: CaptureRadarScreenState) {
+        val card = state.createdCard ?: return
+        if (card.dueAt == null) return
+        val result = AppContainer.get(applicationContext).reminderScheduler.schedule(card)
+        status.text = when (result) {
+            is ReminderScheduleResult.Scheduled -> "${state.message}\nУведомление запланировано: ${formatDueAt(result.dueAt)}"
+            is ReminderScheduleResult.NotScheduled -> "${state.message}\nУведомление не запланировано: ${result.reason}"
         }
     }
 
@@ -345,5 +370,9 @@ class MainActivity : Activity() {
                 ).apply { setMargins(0, 0, 0, 14) }
             )
         }
+    }
+
+    companion object {
+        private const val NOTIFICATION_PERMISSION_REQUEST_CODE = 2001
     }
 }
