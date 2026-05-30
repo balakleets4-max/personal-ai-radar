@@ -55,6 +55,7 @@ class ReminderReceiver : BroadcastReceiver() {
             .build()
 
         manager.notify(cardId.toInt(), notification)
+        ReminderDiagnostics(context).recordShown(cardId, text)
     }
 
     private fun ensureChannel(manager: NotificationManager) {
