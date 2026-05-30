@@ -18,7 +18,20 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("devDebug") {
+            storeFile = file("signing/personalradar-debug.keystore")
+            storePassword = "personalradar"
+            keyAlias = "personalradar-debug"
+            keyPassword = "personalradar"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("devDebug")
+        }
+
         release {
             isMinifyEnabled = false
             proguardFiles(
