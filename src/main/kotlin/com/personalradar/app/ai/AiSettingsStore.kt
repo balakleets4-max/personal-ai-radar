@@ -6,11 +6,17 @@ class AiSettingsStore(context: Context) {
     private val prefs = context.getSharedPreferences("ai_settings", Context.MODE_PRIVATE)
 
     fun getSettings(): AiSettings {
+        val rawKey = prefs.getString(KEY_API_KEY, "") ?: ""
+        val savedCatalog = prefs.getString(KEY_CATALOG_ID, "") ?: ""
+        val parts = rawKey.split("|", limit = 2)
+        val actualKey = parts.getOrNull(0)?.trim() ?: ""
+        val catalogFromCombinedInput = parts.getOrNull(1)?.trim() ?: ""
+        val catalog = savedCatalog.ifBlank { catalogFromCombinedInput }
         return AiSettings(
             cloudAnalysisEnabled = prefs.getBoolean(KEY_CLOUD_ENABLED, false),
             provider = prefs.getString(KEY_PROVIDER, PROVIDER_YANDEX_AI) ?: PROVIDER_YANDEX_AI,
-            apiKey = prefs.getString(KEY_API_KEY, "") ?: "",
-            catalogId = prefs.getString(KEY_CATALOG_ID, "") ?: "",
+            apiKey = actualKey,
+            catalogId = catalog,
             allowManualText = prefs.getBoolean(KEY_ALLOW_MANUAL_TEXT, true),
             allowSharedText = prefs.getBoolean(KEY_ALLOW_SHARED_TEXT, true),
             allowConversations = prefs.getBoolean(KEY_ALLOW_CONVERSATIONS, false)
