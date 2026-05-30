@@ -37,6 +37,8 @@ class ReminderScheduler(
             return ReminderScheduleResult.NotScheduled("Нет разрешения на точные будильники")
         }
 
+        cancel(card.id)
+
         val pendingIntent = buildPendingIntent(card, PendingIntent.FLAG_UPDATE_CURRENT)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, dueAt, pendingIntent)
@@ -60,7 +62,7 @@ class ReminderScheduler(
         val intent = Intent(context, ReminderReceiver::class.java).apply {
             putExtra(ReminderReceiver.EXTRA_CARD_ID, card.id)
             putExtra(ReminderReceiver.EXTRA_TITLE, "Напоминание")
-            putExtra(ReminderReceiver.EXTRA_TEXT, buildHumanNotificationText(card.title))
+            putExtra(ReminderReceiver.EXTRA_TEXT, buildHumanNotificationText(card))
         }
         return PendingIntent.getBroadcast(
             context,
@@ -80,10 +82,18 @@ class ReminderScheduler(
         )
     }
 
-    private fun buildHumanNotificationText(title: String): String {
-        val action = cleanActionText(title)
-        return if (action.isBlank()) {
-            "Напоминаю: откройте Личный ИИ-Радар"
+    private fun buildHumanNotificationText(card: RadarCardEntity): String {
+        val description = card.description.trim()
+        val titleAction = cleanActionText(card.title)
+        val descriptionAction = cleanActionText(description)
+        val action = when {
+            descriptionAction.isNotBlank() && !descriptionAction.startsWith("напоминаю:") -> descriptionAction
+            titleAction.isNotBlank() -> titleAction
+            description.isNotBlank() -> description
+            else -> "откройте Личный ИИ-Радар"
+        }
+        return if (action.startsWith("Напоминаю:", ignoreCase = true)) {
+            action.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
         } else {
             "Напоминаю: нужно $action"
         }
@@ -97,11 +107,15 @@ class ReminderScheduler(
             .removePrefix("Риск:")
             .lowercase()
             .replace(Regex("\\bнапомни(ть)?\\b"), "")
+            .replace(Regex("\\bнапоминаю:?\\b"), "")
             .replace(Regex("\\bмне\\b"), "")
             .replace(Regex("через\\s+\\d+\\s*(минут[уы]?|час(?:а|ов)?|дн(?:я|ей|ь)?)"), "")
             .replace(Regex("через\\s+(минуту|час|день)"), "")
+            .replace(Regex("\\b(сегодня|завтра|послезавтра)\\b"), "")
+            .replace(Regex("\\b(утром|днём|днем|вечером)\\b"), "")
+            .replace(Regex("(?:\\bв\\s*)?\\d{1,2}[:.]\\d{2}\\b"), "")
             .replace(Regex("\\s+"), " ")
-            .trim()
+            .trim(' ', ',', '.', '-', '—', ':', ';')
             .removePrefix("нужно ")
             .removePrefix("надо ")
             .removePrefix("сделать ")
