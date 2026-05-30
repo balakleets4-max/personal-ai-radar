@@ -23,6 +23,7 @@ class QuickCaptureRepository(
         val language = detectLanguage(cleanText)
         val localDateSignal = parseDateSignal(cleanText, now)
         val cloudResult = tryCloudAnalysis(cleanText)
+        val cloudError = if (cloudResult == null) yandexAiClient?.lastErrorMessage else null
         val cloudDateSignal = cloudResult?.dueText?.takeIf { it.isNotBlank() }?.let { parseDateSignal(it, now) }
         val dateSignal = cloudDateSignal ?: localDateSignal
         val actionText = cloudResult?.action?.takeIf { it.isNotBlank() } ?: extractActionText(cleanText)
@@ -39,7 +40,8 @@ class QuickCaptureRepository(
             hasRisk = hasRisk,
             hasReminder = hasReminder,
             dateSignal = dateSignal,
-            cloudResult = cloudResult
+            cloudResult = cloudResult,
+            cloudError = cloudError
         )
 
         val captureId = database.captureDao().insertCapture(
@@ -105,8 +107,11 @@ class QuickCaptureRepository(
     }
 
     private fun tryCloudAnalysis(text: String): AiAnalysisResult? {
-        val settings = aiSettingsStore?.getSettings() ?: return null
-        if (!settings.canUseCloud) return null
+        val settings = aiSettingsStore?.getSettings()
+        if (settings == null) {
+            yandexAiClient?.analyzeText(text, com.personalradar.app.ai.AiSettings(false, "Yandex AI", "", "", true, true, false))
+            return null
+        }
         return yandexAiClient?.analyzeText(text, settings)
     }
 
@@ -180,10 +185,12 @@ class QuickCaptureRepository(
         hasRisk: Boolean,
         hasReminder: Boolean,
         dateSignal: DateSignal?,
-        cloudResult: AiAnalysisResult?
+        cloudResult: AiAnalysisResult?,
+        cloudError: String?
     ): String {
         val signals = mutableListOf<String>()
         signals.add("ИИ: ${if (cloudResult != null) "Yandex AI" else "локальный анализ"}")
+        if (cloudResult == null && !cloudError.isNullOrBlank()) signals.add("причина: ${cloudError.take(160)}")
         signals.add("язык: $language")
         signals.add("тип: ${humanIntent(intent)}")
         if (hasAction) signals.add("действие найдено")
