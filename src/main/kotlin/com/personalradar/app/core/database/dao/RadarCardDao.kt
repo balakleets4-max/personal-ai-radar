@@ -2,7 +2,6 @@ package com.personalradar.app.core.database.dao
 
 import androidx.room.Dao
 import androidx.room.Insert
-import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
@@ -32,6 +31,16 @@ interface RadarCardDao {
                  createdAt DESC
     """)
     fun observeActiveCards(): Flow<List<RadarCardEntity>>
+
+    @Query("""
+        SELECT * FROM radar_cards
+        WHERE status = 'ACTIVE'
+        ORDER BY priority DESC,
+                 CASE WHEN dueAt IS NULL THEN 1 ELSE 0 END,
+                 dueAt ASC,
+                 createdAt DESC
+    """)
+    suspend fun getActiveCardsSnapshot(): List<RadarCardEntity>
 
     @Query("""
         SELECT * FROM radar_cards
