@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application
         android:name=".PersonalAiRadarApplication"
@@ -13,6 +14,10 @@
 
         <receiver
             android:name=".reminder.ReminderReceiver"
+            android:exported="false" />
+
+        <activity
+            android:name=".voice.OfflineVoiceCaptureActivity"
             android:exported="false" />
 
         <activity
