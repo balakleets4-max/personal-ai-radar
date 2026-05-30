@@ -56,6 +56,15 @@ interface RadarCardDao {
     """)
     suspend fun getDoneCardsSnapshot(): List<RadarCardEntity>
 
+    @Query("SELECT COUNT(*) FROM radar_cards WHERE status = 'ACTIVE'")
+    suspend fun countActiveCards(): Int
+
+    @Query("SELECT COUNT(*) FROM radar_cards WHERE status = 'HIDDEN'")
+    suspend fun countHiddenCards(): Int
+
+    @Query("SELECT COUNT(*) FROM radar_cards WHERE status = 'DONE'")
+    suspend fun countDoneCards(): Int
+
     @Query("""
         SELECT * FROM radar_cards
         WHERE status = 'ACTIVE'
