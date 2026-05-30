@@ -1,6 +1,9 @@
 package com.personalradar.app
 
 import android.app.Activity
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.ViewGroup
 import android.widget.Button
@@ -50,7 +53,7 @@ class MainActivity : Activity() {
         }
         radarList = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 16, 24, 24)
+            setPadding(0, 16, 0, 24)
         }
         val saveButton = Button(this).apply {
             text = "Сохранить захват"
@@ -80,11 +83,13 @@ class MainActivity : Activity() {
             addView(TextView(this@MainActivity).apply {
                 text = "Личный ИИ-Радар"
                 textSize = 28f
+                typeface = Typeface.DEFAULT_BOLD
                 setPadding(0, 0, 0, 12)
             })
             addView(TextView(this@MainActivity).apply {
                 text = "Запишите обычной фразой то, что нужно не потерять."
                 textSize = 16f
+                setTextColor(Color.rgb(80, 80, 88))
                 setPadding(0, 0, 0, 20)
             })
             addView(input, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -93,6 +98,7 @@ class MainActivity : Activity() {
             addView(TextView(this@MainActivity).apply {
                 text = "Радар"
                 textSize = 24f
+                typeface = Typeface.DEFAULT_BOLD
                 setPadding(0, 24, 0, 8)
             })
             addView(modeButtons, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -191,26 +197,73 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun cardBackground(): GradientDrawable {
+        return GradientDrawable().apply {
+            setColor(Color.rgb(255, 255, 255))
+            setStroke(2, Color.rgb(210, 210, 220))
+            cornerRadius = 24f
+        }
+    }
+
+    private fun typeLabel(type: String): String {
+        return when (type) {
+            "REMINDER" -> "Напоминание"
+            "TASK" -> "Задача"
+            "RISK" -> "Риск"
+            else -> "Мысль"
+        }
+    }
+
     private fun renderCards(cards: List<RadarCardEntity>) {
         radarList.removeAllViews()
         if (cards.isEmpty()) {
             radarList.addView(TextView(this).apply {
                 text = emptyText()
                 textSize = 16f
-                setPadding(0, 12, 0, 12)
+                setPadding(0, 16, 0, 16)
             })
             return
         }
         cards.forEach { card ->
             val box = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(0, 16, 0, 20)
+                background = cardBackground()
+                setPadding(24, 22, 24, 22)
             }
+
             box.addView(TextView(this).apply {
-                text = "${card.title}\n${card.description}\nПочему в Радаре: ${card.whyText}\nПриоритет: ${card.priority}"
-                textSize = 16f
+                text = typeLabel(card.type)
+                textSize = 14f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.rgb(92, 64, 180))
                 setPadding(0, 0, 0, 8)
             })
+            box.addView(TextView(this).apply {
+                text = card.title
+                textSize = 20f
+                typeface = Typeface.DEFAULT_BOLD
+                setPadding(0, 0, 0, 8)
+            })
+            box.addView(TextView(this).apply {
+                text = card.description
+                textSize = 16f
+                setTextColor(Color.rgb(45, 45, 52))
+                setPadding(0, 0, 0, 12)
+            })
+            box.addView(TextView(this).apply {
+                text = "Почему в Радаре: ${card.whyText}"
+                textSize = 14f
+                setTextColor(Color.rgb(90, 90, 100))
+                setPadding(0, 0, 0, 8)
+            })
+            box.addView(TextView(this).apply {
+                text = "Приоритет: ${card.priority}"
+                textSize = 14f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.rgb(70, 70, 80))
+                setPadding(0, 0, 0, 12)
+            })
+
             val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             when (viewMode) {
                 RadarCardViewMode.ACTIVE -> {
@@ -237,7 +290,13 @@ class MainActivity : Activity() {
                 }
             }
             box.addView(buttons)
-            radarList.addView(box, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            radarList.addView(
+                box,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { setMargins(0, 0, 0, 18) }
+            )
         }
     }
 }
