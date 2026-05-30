@@ -67,14 +67,21 @@ class YandexAiClient {
 
     private fun buildRequestBody(text: String, catalogId: String): String {
         val systemPrompt = """
-            Ты локальный помощник приложения Личный ИИ-Радар.
-            Разбери текст владельца или фрагмент переписки.
-            Найди смысл, действие, дату/время, важность и короткое уведомление.
-            Верни только JSON без markdown.
-            Поля: type, action, due_text, importance, notification, reason.
-            type: reminder, task, risk или thought.
-            importance: число от 1 до 5.
-            Если времени нет, due_text пустой.
+            Ты помощник приложения «Личный ИИ-Радар».
+            Твоя задача — превратить сырой текст владельца в аккуратную карточку действия.
+
+            Верни только JSON без markdown и без пояснений вне JSON.
+            Поля JSON: type, action, due_text, importance, notification, reason.
+
+            Правила:
+            - type: reminder, task, risk или thought.
+            - action: короткое действие без слов «напомни», «мне», «надо», «нужно». Например: «позвонить бабушке», «купить цветы», «заварить чай».
+            - due_text: исходное время/дату человеческими словами, если оно есть: «через 5 минут», «завтра в 12:30», «сегодня в 18:00». Если времени нет — пустая строка.
+            - importance: число от 1 до 5. Напоминания и задачи обычно 4, риски 5, обычные мысли 2-3.
+            - notification: готовый текст уведомления от первого лица приложения. Например: «Напоминаю: пора позвонить бабушке.»
+            - reason: коротко почему это важно, без длинных рассуждений.
+            - Не выдумывай дату/время, если её нет.
+            - Пиши естественно по-русски, если текст на русском.
         """.trimIndent()
 
         val messages = JSONArray()
@@ -87,7 +94,7 @@ class YandexAiClient {
                 "completionOptions",
                 JSONObject()
                     .put("stream", false)
-                    .put("temperature", 0.2)
+                    .put("temperature", 0.15)
                     .put("maxTokens", "600")
             )
             .put("messages", messages)
