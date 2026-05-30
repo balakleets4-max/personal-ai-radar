@@ -44,6 +44,13 @@ interface RadarCardDao {
 
     @Query("""
         SELECT * FROM radar_cards
+        WHERE status = 'HIDDEN'
+        ORDER BY hiddenAt DESC, updatedAt DESC, createdAt DESC
+    """)
+    suspend fun getHiddenCardsSnapshot(): List<RadarCardEntity>
+
+    @Query("""
+        SELECT * FROM radar_cards
         WHERE status = 'ACTIVE'
         AND priority >= 4
         ORDER BY priority DESC,
@@ -87,6 +94,9 @@ interface RadarCardDao {
 
     @Query("UPDATE radar_cards SET status = 'HIDDEN', hiddenAt = :now, updatedAt = :now WHERE id = :cardId")
     suspend fun hideCard(cardId: Long, now: Long)
+
+    @Query("UPDATE radar_cards SET status = 'ACTIVE', hiddenAt = NULL, updatedAt = :now WHERE id = :cardId")
+    suspend fun restoreHiddenCard(cardId: Long, now: Long)
 
     @Query("UPDATE radar_cards SET status = 'SNOOZED', snoozedUntil = :until, updatedAt = :now WHERE id = :cardId")
     suspend fun snoozeCard(cardId: Long, until: Long, now: Long)
