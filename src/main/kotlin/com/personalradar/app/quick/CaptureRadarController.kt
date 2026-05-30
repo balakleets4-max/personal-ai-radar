@@ -15,15 +15,33 @@ class CaptureRadarController(
         }
     }
 
+    suspend fun loadRadarCounters(): RadarCounters {
+        val dao = database.radarCardDao()
+        return RadarCounters(
+            active = dao.countActiveCards(),
+            hidden = dao.countHiddenCards(),
+            done = dao.countDoneCards()
+        )
+    }
+
+    suspend fun loadRadarSnapshot(mode: RadarCardViewMode): RadarSnapshot {
+        return RadarSnapshot(
+            cards = loadRadarCards(mode),
+            counters = loadRadarCounters()
+        )
+    }
+
     suspend fun loadRadarCards(showHidden: Boolean = false): List<RadarCardEntity> {
         return loadRadarCards(if (showHidden) RadarCardViewMode.HIDDEN else RadarCardViewMode.ACTIVE)
     }
 
     suspend fun saveCaptureAndLoadRadar(text: String, mode: RadarCardViewMode): CaptureRadarScreenState {
         val result = repository.addCapture(text)
+        val snapshot = loadRadarSnapshot(mode)
         return CaptureRadarScreenState(
             message = "Захват #${result.captureId} сохранён. Карточка Радара #${result.cardId} создана.",
-            cards = loadRadarCards(mode)
+            cards = snapshot.cards,
+            counters = snapshot.counters
         )
     }
 
@@ -40,9 +58,11 @@ class CaptureRadarController(
 
     suspend fun markCardDoneAndLoadRadar(cardId: Long, mode: RadarCardViewMode): CaptureRadarScreenState {
         database.radarCardDao().markDone(cardId, System.currentTimeMillis())
+        val snapshot = loadRadarSnapshot(mode)
         return CaptureRadarScreenState(
             message = "Карточка #$cardId отмечена как готовая.",
-            cards = loadRadarCards(mode)
+            cards = snapshot.cards,
+            counters = snapshot.counters
         )
     }
 
@@ -59,25 +79,32 @@ class CaptureRadarController(
 
     suspend fun hideCardAndLoadRadar(cardId: Long): CaptureRadarScreenState {
         database.radarCardDao().hideCard(cardId, System.currentTimeMillis())
+        val snapshot = loadRadarSnapshot(RadarCardViewMode.ACTIVE)
         return CaptureRadarScreenState(
             message = "Карточка #$cardId скрыта. Её можно вернуть из раздела скрытых.",
-            cards = loadRadarCards(RadarCardViewMode.ACTIVE)
+            cards = snapshot.cards,
+            counters = snapshot.counters
         )
     }
 
     suspend fun restoreHiddenCardAndLoadRadar(cardId: Long, showHidden: Boolean): CaptureRadarScreenState {
         database.radarCardDao().restoreCardToActive(cardId, System.currentTimeMillis())
+        val mode = if (showHidden) RadarCardViewMode.HIDDEN else RadarCardViewMode.ACTIVE
+        val snapshot = loadRadarSnapshot(mode)
         return CaptureRadarScreenState(
             message = "Карточка #$cardId возвращена в Радар.",
-            cards = loadRadarCards(if (showHidden) RadarCardViewMode.HIDDEN else RadarCardViewMode.ACTIVE)
+            cards = snapshot.cards,
+            counters = snapshot.counters
         )
     }
 
     suspend fun restoreCardToActiveAndLoadRadar(cardId: Long, mode: RadarCardViewMode): CaptureRadarScreenState {
         database.radarCardDao().restoreCardToActive(cardId, System.currentTimeMillis())
+        val snapshot = loadRadarSnapshot(mode)
         return CaptureRadarScreenState(
             message = "Карточка #$cardId возвращена в Радар.",
-            cards = loadRadarCards(mode)
+            cards = snapshot.cards,
+            counters = snapshot.counters
         )
     }
 }
@@ -88,7 +115,19 @@ enum class RadarCardViewMode {
     DONE
 }
 
+data class RadarCounters(
+    val active: Int,
+    val hidden: Int,
+    val done: Int
+)
+
+data class RadarSnapshot(
+    val cards: List<RadarCardEntity>,
+    val counters: RadarCounters
+)
+
 data class CaptureRadarScreenState(
     val message: String,
-    val cards: List<RadarCardEntity>
+    val cards: List<RadarCardEntity>,
+    val counters: RadarCounters
 )
