@@ -17,12 +17,13 @@ class QuickCaptureRepository(
         val now = System.currentTimeMillis()
         val language = detectLanguage(cleanText)
         val dateSignal = parseDateSignal(cleanText, now)
+        val actionText = extractActionText(cleanText)
         val mainIntent = detectIntent(cleanText, dateSignal)
-        val summary = cleanText.take(120)
-        val hasAction = hasActionSignal(cleanText)
+        val summary = actionText.ifBlank { cleanText }.take(120)
+        val hasAction = hasActionSignal(cleanText) || actionText.isNotBlank()
         val hasRisk = hasRiskSignal(cleanText)
         val hasReminder = hasReminderSignal(cleanText) || dateSignal != null
-        val cardTitle = buildCardTitle(cleanText, mainIntent)
+        val cardTitle = buildCardTitle(summary, mainIntent)
         val whyText = buildWhyText(language, mainIntent, hasAction, hasRisk, hasReminder, dateSignal)
 
         val captureId = database.captureDao().insertCapture(
@@ -30,7 +31,7 @@ class QuickCaptureRepository(
                 rawText = cleanText,
                 createdAt = now,
                 updatedAt = now,
-                source = "manual_text",
+                source = "manual_or_shared_text",
                 language = language,
                 status = "ACTIVE"
             )
@@ -40,13 +41,13 @@ class QuickCaptureRepository(
             AnalysisResultEntity(
                 captureId = captureId,
                 analyzedAt = now,
-                parserVersion = "quick-parser-v0.4",
-                analyzerVersion = "quick-analyzer-v0.4",
+                parserVersion = "context-parser-v0.5",
+                analyzerVersion = "context-analyzer-v0.5",
                 isLatest = true,
                 language = language,
                 mainIntent = mainIntent,
                 secondaryIntent = null,
-                confidence = if (dateSignal != null) 0.74f else 0.62f,
+                confidence = if (dateSignal != null) 0.78f else 0.64f,
                 summary = summary,
                 detectedDateText = dateSignal?.dateText,
                 detectedTimeText = dateSignal?.timeText,
@@ -63,7 +64,7 @@ class QuickCaptureRepository(
             RadarCardEntity(
                 captureId = captureId,
                 analysisId = analysisId,
-                radarEngineVersion = "quick-radar-v0.4",
+                radarEngineVersion = "quick-radar-v0.5",
                 type = mainIntent,
                 title = cardTitle,
                 description = summary,
@@ -74,7 +75,7 @@ class QuickCaptureRepository(
                     hasReminder || hasAction -> 4
                     else -> 3
                 },
-                confidence = if (dateSignal != null) 0.74f else 0.62f,
+                confidence = if (dateSignal != null) 0.78f else 0.64f,
                 status = "ACTIVE",
                 dueAt = dateSignal?.timestampMillis,
                 createdAt = now,
@@ -110,7 +111,10 @@ class QuickCaptureRepository(
 
     private fun hasActionSignal(text: String): Boolean {
         val lower = text.lowercase()
-        return listOf("надо", "нужно", "сделать", "проверить", "позвонить", "купить", "отправить", "do", "check", "call", "send", "buy").any { it in lower }
+        return listOf(
+            "надо", "нужно", "сделать", "проверить", "позвонить", "купить", "отправить", "забрать", "принести", "выпить", "оплатить",
+            "do", "check", "call", "send", "buy", "pay", "bring"
+        ).any { it in lower }
     }
 
     private fun hasRiskSignal(text: String): Boolean {
@@ -121,9 +125,9 @@ class QuickCaptureRepository(
     private fun hasReminderSignal(text: String): Boolean {
         val lower = text.lowercase()
         return listOf(
-            "завтра", "сегодня", "послезавтра", "вечером", "утром", "днём", "днем", "через", "напомни",
+            "завтра", "сегодня", "послезавтра", "вечером", "утром", "днём", "днем", "через", "напомни", "напомнить",
             "tomorrow", "today", "remind", "morning", "evening"
-        ).any { it in lower }
+        ).any { it in lower } || Regex("\\b\\d{1,2}[:.]\\d{2}\\b").containsMatchIn(lower)
     }
 
     private fun buildCardTitle(text: String, intent: String): String {
@@ -133,7 +137,8 @@ class QuickCaptureRepository(
             "TASK" -> "Задача"
             else -> "Мысль"
         }
-        return "$prefix: ${text.take(48)}"
+        val clean = text.trim().replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
+        return "$prefix: ${clean.take(64)}"
     }
 
     private fun buildWhyText(
@@ -147,7 +152,7 @@ class QuickCaptureRepository(
         val signals = mutableListOf<String>()
         signals.add("язык: $language")
         signals.add("тип: ${humanIntent(intent)}")
-        if (hasAction) signals.add("есть сигнал действия")
+        if (hasAction) signals.add("действие найдено")
         if (hasRisk) signals.add("есть сигнал риска")
         if (hasReminder) signals.add("есть сигнал времени/напоминания")
         if (dateSignal != null) signals.add("когда: ${dateSignal.label}")
@@ -168,21 +173,45 @@ class QuickCaptureRepository(
         val relative = parseRelativeDate(lower, nowMillis)
         if (relative != null) return relative
 
+        val explicitDateTime = parseDateWordWithOptionalTime(lower, nowMillis)
+        if (explicitDateTime != null) return explicitDateTime
+
+        val explicitTime = parseExplicitTime(lower, nowMillis)
+        if (explicitTime != null) return explicitTime
+
+        return null
+    }
+
+    private fun parseDateWordWithOptionalTime(text: String, nowMillis: Long): DateSignal? {
         val calendar = Calendar.getInstance().apply { timeInMillis = nowMillis }
         val dateText = when {
-            "послезавтра" in lower -> {
+            "послезавтра" in text -> {
                 calendar.add(Calendar.DAY_OF_YEAR, 2)
                 "послезавтра"
             }
-            "завтра" in lower || "tomorrow" in lower -> {
+            "завтра" in text || "tomorrow" in text -> {
                 calendar.add(Calendar.DAY_OF_YEAR, 1)
                 "завтра"
             }
-            "сегодня" in lower || "today" in lower -> "сегодня"
+            "сегодня" in text || "today" in text -> "сегодня"
             else -> null
         } ?: return null
 
-        val timeSignal = detectTimeOfDay(lower)
+        val exactTime = findClockTime(text)
+        if (exactTime != null) {
+            calendar.set(Calendar.HOUR_OF_DAY, exactTime.hour)
+            calendar.set(Calendar.MINUTE, exactTime.minute)
+            calendar.set(Calendar.SECOND, 0)
+            calendar.set(Calendar.MILLISECOND, 0)
+            return DateSignal(
+                label = "$dateText ${exactTime.label}",
+                dateText = dateText,
+                timeText = exactTime.label,
+                timestampMillis = calendar.timeInMillis
+            )
+        }
+
+        val timeSignal = detectTimeOfDay(text)
         applyTimeOfDay(calendar, timeSignal)
         return DateSignal(
             label = buildDateLabel(dateText, timeSignal.label),
@@ -190,6 +219,37 @@ class QuickCaptureRepository(
             timeText = timeSignal.label,
             timestampMillis = calendar.timeInMillis
         )
+    }
+
+    private fun parseExplicitTime(text: String, nowMillis: Long): DateSignal? {
+        val time = findClockTime(text) ?: return null
+        val calendar = Calendar.getInstance().apply { timeInMillis = nowMillis }
+        calendar.set(Calendar.HOUR_OF_DAY, time.hour)
+        calendar.set(Calendar.MINUTE, time.minute)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
+
+        val dateText = if (calendar.timeInMillis > nowMillis) {
+            "сегодня"
+        } else {
+            calendar.add(Calendar.DAY_OF_YEAR, 1)
+            "завтра"
+        }
+
+        return DateSignal(
+            label = "$dateText ${time.label}",
+            dateText = dateText,
+            timeText = time.label,
+            timestampMillis = calendar.timeInMillis
+        )
+    }
+
+    private fun findClockTime(text: String): ClockTime? {
+        val match = Regex("(?:\\bв\\s*)?(\\d{1,2})[:.](\\d{2})\\b").find(text) ?: return null
+        val hour = match.groupValues[1].toIntOrNull() ?: return null
+        val minute = match.groupValues[2].toIntOrNull() ?: return null
+        if (hour !in 0..23 || minute !in 0..59) return null
+        return ClockTime(hour = hour, minute = minute, label = "%02d:%02d".format(hour, minute))
     }
 
     private fun parseRelativeDate(text: String, nowMillis: Long): DateSignal? {
@@ -250,6 +310,25 @@ class QuickCaptureRepository(
         return if (timeText == null) dateText else "$dateText $timeText"
     }
 
+    private fun extractActionText(text: String): String {
+        return text
+            .replace(Regex("(?i)https?://\\S+"), "")
+            .replace(Regex("(?i)\\bнапомни(ть)?\\b"), "")
+            .replace(Regex("(?i)\\bмне\\b"), "")
+            .replace(Regex("(?i)\\bпожалуйста\\b"), "")
+            .replace(Regex("через\\s+\\d+\\s*(минут[уы]?|час(?:а|ов)?|дн(?:я|ей|ь)?)"), "")
+            .replace(Regex("через\\s+(минуту|час|день)"), "")
+            .replace(Regex("\\b(сегодня|завтра|послезавтра)\\b"), "")
+            .replace(Regex("\\b(утром|днём|днем|вечером)\\b"), "")
+            .replace(Regex("(?:\\bв\\s*)?\\d{1,2}[:.]\\d{2}\\b"), "")
+            .replace(Regex("\\s+"), " ")
+            .trim(' ', ',', '.', '-', '—', ':', ';')
+            .removePrefix("нужно ")
+            .removePrefix("надо ")
+            .removePrefix("сделать ")
+            .trim()
+    }
+
     private fun plural(number: Int, one: String, few: String, many: String): String {
         val n = number % 100
         val n1 = number % 10
@@ -272,6 +351,12 @@ data class TimeSignal(
     val label: String?,
     val hour: Int,
     val minute: Int
+)
+
+data class ClockTime(
+    val hour: Int,
+    val minute: Int,
+    val label: String
 )
 
 data class QuickCaptureResult(
