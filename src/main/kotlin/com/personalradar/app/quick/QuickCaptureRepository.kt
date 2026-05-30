@@ -183,14 +183,14 @@ class QuickCaptureRepository(
         cloudResult: AiAnalysisResult?
     ): String {
         val signals = mutableListOf<String>()
+        signals.add("ИИ: ${if (cloudResult != null) "Yandex AI" else "локальный анализ"}")
         signals.add("язык: $language")
         signals.add("тип: ${humanIntent(intent)}")
-        if (cloudResult != null) signals.add("усилено Yandex AI")
         if (hasAction) signals.add("действие найдено")
         if (hasRisk) signals.add("есть сигнал риска")
         if (hasReminder) signals.add("есть сигнал времени/напоминания")
         if (dateSignal != null) signals.add("когда: ${dateSignal.label}")
-        if (cloudResult?.reason?.isNotBlank() == true) signals.add("ИИ: ${cloudResult.reason.take(90)}")
+        if (cloudResult?.reason?.isNotBlank() == true) signals.add("причина ИИ: ${cloudResult.reason.take(90)}")
         return signals.joinToString("; ")
     }
 
