@@ -10,7 +10,7 @@ class QuickCaptureRepository(
 ) {
     suspend fun addCapture(rawText: String): QuickCaptureResult {
         val cleanText = rawText.trim()
-        require(cleanText.isNotBlank()) { "Capture text is empty" }
+        require(cleanText.isNotBlank()) { "Текст захвата пустой" }
 
         val now = System.currentTimeMillis()
         val language = detectLanguage(cleanText)
@@ -37,8 +37,8 @@ class QuickCaptureRepository(
             AnalysisResultEntity(
                 captureId = captureId,
                 analyzedAt = now,
-                parserVersion = "quick-v0.1",
-                analyzerVersion = "quick-v0.1",
+                parserVersion = "quick-v0.2",
+                analyzerVersion = "quick-v0.2",
                 isLatest = true,
                 language = language,
                 mainIntent = mainIntent,
@@ -60,7 +60,7 @@ class QuickCaptureRepository(
             RadarCardEntity(
                 captureId = captureId,
                 analysisId = analysisId,
-                radarEngineVersion = "quick-radar-v0.1",
+                radarEngineVersion = "quick-radar-v0.2",
                 type = mainIntent,
                 title = cardTitle,
                 description = summary,
@@ -122,10 +122,10 @@ class QuickCaptureRepository(
 
     private fun buildCardTitle(text: String, intent: String): String {
         val prefix = when (intent) {
-            "RISK" -> "Risk"
-            "REMINDER" -> "Reminder"
-            "TASK" -> "Task"
-            else -> "Thought"
+            "RISK" -> "Риск"
+            "REMINDER" -> "Напоминание"
+            "TASK" -> "Задача"
+            else -> "Мысль"
         }
         return "$prefix: ${text.take(48)}"
     }
@@ -138,12 +138,21 @@ class QuickCaptureRepository(
         hasReminder: Boolean
     ): String {
         val signals = mutableListOf<String>()
-        signals.add("language=$language")
-        signals.add("intent=$intent")
-        if (hasAction) signals.add("action signal")
-        if (hasRisk) signals.add("risk signal")
-        if (hasReminder) signals.add("time/reminder signal")
-        return "Why I see this: ${signals.joinToString()}"
+        signals.add("язык: $language")
+        signals.add("тип: ${humanIntent(intent)}")
+        if (hasAction) signals.add("есть сигнал действия")
+        if (hasRisk) signals.add("есть сигнал риска")
+        if (hasReminder) signals.add("есть сигнал времени/напоминания")
+        return signals.joinToString("; ")
+    }
+
+    private fun humanIntent(intent: String): String {
+        return when (intent) {
+            "RISK" -> "риск"
+            "REMINDER" -> "напоминание"
+            "TASK" -> "задача"
+            else -> "мысль"
+        }
     }
 }
 
