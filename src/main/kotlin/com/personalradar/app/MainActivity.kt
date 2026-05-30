@@ -3,6 +3,7 @@ package com.personalradar.app
 import android.Manifest
 import android.app.Activity
 import android.app.AlarmManager
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -13,6 +14,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.speech.RecognizerIntent
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
@@ -61,6 +63,31 @@ class MainActivity : Activity() {
         handleIncomingShare(intent)
     }
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != VOICE_INPUT_REQUEST_CODE) return
+
+        if (resultCode != RESULT_OK) {
+            status.text = "Голосовой захват отменён."
+            return
+        }
+
+        val spokenText = data
+            ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()
+            ?.trim()
+            .orEmpty()
+
+        if (spokenText.isBlank()) {
+            status.text = "Не удалось распознать голос. Попробуйте ещё раз."
+            return
+        }
+
+        input.setText(spokenText)
+        status.text = "Голос распознан. Обрабатываю: $spokenText"
+        saveCaptureText(spokenText, fromShare = false)
+    }
+
     private fun buildScreen(): ScrollView {
         input = EditText(this).apply {
             hint = "Введите захват памяти"
@@ -79,6 +106,10 @@ class MainActivity : Activity() {
         val saveButton = Button(this).apply {
             text = "Сохранить захват"
             setOnClickListener { saveCapture() }
+        }
+        val voiceButton = Button(this).apply {
+            text = "🎙 Сказать в Радар"
+            setOnClickListener { startVoiceCapture() }
         }
         activeButton = Button(this).apply {
             text = "Активные (0)"
@@ -122,6 +153,7 @@ class MainActivity : Activity() {
                 setPadding(0, 0, 0, 14)
             })
             addView(input, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            addView(voiceButton, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(saveButton, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(status, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(buildSourcesSection(), ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -156,6 +188,7 @@ class MainActivity : Activity() {
                 setPadding(0, 0, 0, 12)
             })
             addView(sourceRow("Ручной ввод", "включён", "Можно вручную добавить мысль, дело или напоминание."))
+            addView(sourceRow("Голосовой захват", "включён", "Можно сказать мысль или напоминание голосом — аудио не сохраняется."))
             addView(sourceRow("Поделиться в Радар", "включено", "Из другого приложения нажмите Поделиться и выберите Личный ИИ-Радар."))
             addView(sourceRow("Уведомления Радара", "частично", "Приложение уже умеет отправлять собственные напоминания."))
             addView(sourceRow("Календарь", "скоро", "Радар сможет читать события календаря с разрешения владельца."))
@@ -333,6 +366,21 @@ class MainActivity : Activity() {
                     })
                 }
             }
+        }
+    }
+
+    private fun startVoiceCapture() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU")
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "Скажите мысль, задачу или напоминание")
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        }
+        try {
+            status.text = "Открываю голосовой захват..."
+            startActivityForResult(intent, VOICE_INPUT_REQUEST_CODE)
+        } catch (_: ActivityNotFoundException) {
+            status.text = "На телефоне нет системного распознавания речи. Можно использовать голосовой ввод клавиатуры."
         }
     }
 
@@ -641,5 +689,6 @@ class MainActivity : Activity() {
 
     companion object {
         private const val NOTIFICATION_PERMISSION_REQUEST_CODE = 2001
+        private const val VOICE_INPUT_REQUEST_CODE = 2002
     }
 }
