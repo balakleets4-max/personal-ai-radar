@@ -41,6 +41,10 @@ class AiSettingsStore(context: Context) {
         prefs.edit().putBoolean(KEY_ALLOW_CONVERSATIONS, enabled).apply()
     }
 
+    fun clearApiKey() {
+        clearConnectionData()
+    }
+
     fun clearConnectionData() {
         prefs.edit()
             .remove(KEY_API_KEY)
