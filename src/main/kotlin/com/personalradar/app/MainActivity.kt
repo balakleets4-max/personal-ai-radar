@@ -52,6 +52,13 @@ class MainActivity : Activity() {
         requestNotificationPermissionIfNeeded()
         requestExactAlarmPermissionIfNeeded()
         refreshRadarCards()
+        handleIncomingShare(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingShare(intent)
     }
 
     private fun buildScreen(): ScrollView {
@@ -142,14 +149,14 @@ class MainActivity : Activity() {
                 setPadding(0, 0, 0, 6)
             })
             addView(TextView(this@MainActivity).apply {
-                text = "Здесь будет управление тем, откуда помощник берёт важные сигналы. Сейчас это первый экран-подготовка."
+                text = "Здесь видно, откуда помощник уже умеет принимать важные сигналы."
                 textSize = 14f
                 setTextColor(Color.rgb(80, 80, 88))
                 setPadding(0, 0, 0, 12)
             })
             addView(sourceRow("Ручной ввод", "включён", "Можно вручную добавить мысль, дело или напоминание."))
+            addView(sourceRow("Поделиться в Радар", "включено", "Из другого приложения нажмите Поделиться и выберите Личный ИИ-Радар."))
             addView(sourceRow("Уведомления Радара", "частично", "Приложение уже умеет отправлять собственные напоминания."))
-            addView(sourceRow("Поделиться в Радар", "следующий шаг", "Текст из Telegram, браузера, заметок и почты можно будет отправлять в Радар."))
             addView(sourceRow("Календарь", "скоро", "Радар сможет читать события календаря с разрешения владельца."))
             addView(sourceRow("Уведомления телефона", "позже", "Будущий источник для поиска важных сообщений и событий."))
             addView(sourceRow("Контакты, ссылки, картинки", "позже", "Будут подключаться осторожно, только с явным разрешением."))
@@ -209,15 +216,36 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun handleIncomingShare(incomingIntent: Intent?) {
+        val text = extractSharedText(incomingIntent)?.trim() ?: return
+        if (text.isBlank()) return
+        input.setText(text)
+        saveCaptureText(text, fromShare = true)
+    }
+
+    private fun extractSharedText(incomingIntent: Intent?): String? {
+        if (incomingIntent?.action != Intent.ACTION_SEND) return null
+        if (incomingIntent.type != "text/plain") return null
+        return incomingIntent.getStringExtra(Intent.EXTRA_TEXT)
+            ?: incomingIntent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
+    }
+
     private fun saveCapture() {
-        val text = input.text.toString()
+        saveCaptureText(input.text.toString(), fromShare = false)
+    }
+
+    private fun saveCaptureText(text: String, fromShare: Boolean) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val state = controller.saveCaptureAndLoadRadar(text, viewMode)
+                val state = controller.saveCaptureAndLoadRadar(text, RadarCardViewMode.ACTIVE)
                 withContext(Dispatchers.Main) {
+                    viewMode = RadarCardViewMode.ACTIVE
                     input.setText("")
                     renderState(state)
                     scheduleCreatedReminder(state)
+                    if (fromShare && state.createdCard?.dueAt == null) {
+                        status.text = "Текст принят через Поделиться. Карточка создана."
+                    }
                 }
             } catch (t: Throwable) {
                 withContext(Dispatchers.Main) {
