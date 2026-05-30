@@ -15,8 +15,24 @@ class CaptureRadarController(
         val result = repository.addCapture(text)
         val cards = loadRadarCards()
         return CaptureRadarScreenState(
-            message = "Saved Capture #${result.captureId}; Radar card #${result.cardId} created.",
+            message = "Захват #${result.captureId} сохранён. Карточка Радара #${result.cardId} создана.",
             cards = cards
+        )
+    }
+
+    suspend fun markCardDoneAndLoadRadar(cardId: Long): CaptureRadarScreenState {
+        database.radarCardDao().markDone(cardId, System.currentTimeMillis())
+        return CaptureRadarScreenState(
+            message = "Карточка #$cardId отмечена как готовая.",
+            cards = loadRadarCards()
+        )
+    }
+
+    suspend fun hideCardAndLoadRadar(cardId: Long): CaptureRadarScreenState {
+        database.radarCardDao().hideCard(cardId, System.currentTimeMillis())
+        return CaptureRadarScreenState(
+            message = "Карточка #$cardId скрыта.",
+            cards = loadRadarCards()
         )
     }
 }
