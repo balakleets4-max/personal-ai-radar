@@ -1,129 +1,58 @@
-# Личный ИИ-Радар — Code Step 1 + базовый доменный каркас v0.1.4
+# Личный ИИ-Радар — Android vertical slice v0.1.5
 
-Этот пакет содержит первый кодовый слой проекта:
+Этот репозиторий теперь содержит собираемый Android-проект `com.personalradar.app` и первый рабочий вертикальный сценарий:
 
-- core infrastructure;
-- Room entities;
-- DAO;
-- AppDatabase;
-- доменные draft-модели;
-- интерфейсы движков;
-- простые rule-based реализации;
-- базовые Use Cases для вертикального среза.
+- ввод Capture / Захвата памяти;
+- сохранение Capture в локальную Room-базу;
+- базовый rule-based анализ текста;
+- создание RadarCard;
+- отображение активных Radar-карточек на экране;
+- объяснение причины появления карточки через `whyText`.
 
-## Важно
+## Текущий архитектурный путь
 
-Это не полный Android-проект с Gradle/Manifest/UI. Это исходный Kotlin-пакет, который нужно перенести в Android-проект `com.personalradar.app`.
+```text
+MainActivity
+→ AppContainer
+→ CaptureRadarController
+→ QuickCaptureRepository
+→ Room DAO / Entity
+```
 
-## Что входит
+## Ключевые файлы
 
-### Core
+- `src/main/kotlin/com/personalradar/app/MainActivity.kt`
+- `src/main/kotlin/com/personalradar/app/di/AppContainer.kt`
+- `src/main/kotlin/com/personalradar/app/quick/CaptureRadarController.kt`
+- `src/main/kotlin/com/personalradar/app/quick/QuickCaptureRepository.kt`
+- `src/main/kotlin/com/personalradar/app/core/database/AppDatabase.kt`
+- `.github/workflows/android-build.yml`
 
-- `TimeProvider`
-- `SystemTimeProvider`
-- `TransactionRunner`
-- `RoomTransactionRunner`
-- `AppVersions`
-- constants/status objects
-- text/dedupe helpers
+## CI
 
-### Room schema v0.1.4
+GitHub Actions выполняет:
 
-- `CaptureEntity`
-- `AnalysisResultEntity`
-- `ParsedEntityEntity`
-- `RadarCardEntity`
-- `ActionEntity`
-- `ReminderEntity`
-- `TopicEntity`
-- `CaptureTopicCrossRef`
-- `DeviceCapabilityEntity`
-- `MemoryFactEntity`
-- `ReflectionLogEntity`
-- `UserSettingsEntity`
-- `AppEventLogEntity`
-- `PendingSystemActionEntity`
+```bash
+gradle -Pandroid.useAndroidX=true -Pandroid.nonTransitiveRClass=true assembleDebug --stacktrace
+```
 
-### DAO
+## Проверки, которые уже прошли
 
-- `CaptureDao`
-- `AnalysisDao`
-- `ParsedEntityDao`
-- `RadarCardDao`
-- `ActionDao`
-- `ReminderDao`
-- `TopicDao`
-- `DeviceCapabilityDao`
-- `MemoryFactDao`
-- `ReflectionDao`
-- `UserSettingsDao`
-- `AppEventLogDao`
-- `PendingSystemActionDao`
+- Gradle запускается в GitHub Actions.
+- AndroidX включён через `gradle.properties`.
+- Kotlin-код компилируется.
+- Room Entity/DAO проходят текущую сборку.
+- Первый вертикальный сценарий собирается зелёным run.
 
-### Engines
+## Следующий шаг
 
-- `LanguageDetector` + `BasicLanguageDetector`
-- `ParserEngine` + `RuleBasedParserEngine`
-- `AnalysisEngine` + `RuleBasedAnalysisEngine`
-- `RadarEngine` + `RuleBasedRadarEngine`
+`Code Step 5`:
 
-### Use Cases
+- добавить выгрузку debug APK как GitHub Actions artifact;
+- скачать APK на Android;
+- проверить запуск приложения на телефоне;
+- вручную протестировать Capture → RadarCard.
 
-- `AddCaptureUseCase`
-- `PerformCardActionUseCase`
-- `CreateReminderUseCase`
-- `ProcessPendingSystemActionsUseCase`
-- `ReactivateSnoozedCardsUseCase`
-- `RefreshDeviceCapabilitiesUseCase`
-- `GenerateDailyReflectionUseCase`
-- `CheckOverdueRemindersUseCase`
-- `InitializeDefaultSettingsUseCase`
-- `CleanOldAppEventLogsUseCase`
+## Build trigger
 
-## Проверки, которые уже проведены
-
-- Все `.kt` файлы имеют package declaration.
-- Все 14 Entity-файлов присутствуют.
-- Все 13 DAO-файлов присутствуют.
-- В схеме есть `PendingSystemActionEntity`.
-- В `ReminderEntity` есть `schedulerState`.
-- В `RadarCardEntity` есть `duplicateHitCount` отдельно от `shownCount`.
-- В `AnalysisResultEntity` есть `isLatest`, `parserVersion`, `analyzerVersion`.
-- В `MemoryFactEntity` есть `expiresAt`.
-- В `DeviceCapabilityEntity` есть `category`.
-- `AppEventLogEntity` не должен хранить raw Capture; в коде логируется только ID и техническое сообщение.
-
-## Что нужно проверить уже в Android Studio
-
-1. Компиляцию Room-аннотаций.
-2. SQL-запросы DAO через Room processor.
-3. Наличие зависимостей:
-   - Room runtime / ktx / compiler или ksp;
-   - Kotlin coroutines;
-   - lifecycle-viewmodel-compose позже;
-   - navigation-compose позже.
-4. Unit-тесты для `AddCaptureUseCase`, `RadarEngine`, `ParserEngine`, DAO.
-
-## Следующий кодовый шаг
-
-`Code Step 2`:
-
-- подключить этот пакет к реальному Android-проекту;
-- настроить Gradle dependencies;
-- собрать проект;
-- исправить ошибки Room-компилятора;
-- написать первые DAO tests.
-
-
-## Патч проверки v0.1.5
-
-После повторной сверки с матчастью и структурной проверки добавлены:
-
-- `RefreshDeviceCapabilitiesUseCase`;
-- `GenerateDailyReflectionUseCase`;
-- DAO count/query методы для Reflection;
-- retry threshold для `PendingSystemActionDao`;
-- безопасное экранирование title в `CreateReminderUseCase` payloadJson;
-- `CALENDAR_NOT_USED` как APP_POLICY capability для v0.1.
-
-Также уточнено: `ProcessPendingSystemActionsUseCase` не должен бесконечно повторять failed actions; лимит попыток по умолчанию — 3.
+Последний ручной trigger сборки: 2026-05-30 03:33 local workflow check.
