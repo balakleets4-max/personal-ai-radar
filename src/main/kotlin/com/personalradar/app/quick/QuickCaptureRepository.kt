@@ -40,13 +40,13 @@ class QuickCaptureRepository(
             AnalysisResultEntity(
                 captureId = captureId,
                 analyzedAt = now,
-                parserVersion = "quick-parser-v0.3",
-                analyzerVersion = "quick-analyzer-v0.3",
+                parserVersion = "quick-parser-v0.4",
+                analyzerVersion = "quick-analyzer-v0.4",
                 isLatest = true,
                 language = language,
                 mainIntent = mainIntent,
                 secondaryIntent = null,
-                confidence = if (dateSignal != null) 0.72f else 0.62f,
+                confidence = if (dateSignal != null) 0.74f else 0.62f,
                 summary = summary,
                 detectedDateText = dateSignal?.dateText,
                 detectedTimeText = dateSignal?.timeText,
@@ -63,7 +63,7 @@ class QuickCaptureRepository(
             RadarCardEntity(
                 captureId = captureId,
                 analysisId = analysisId,
-                radarEngineVersion = "quick-radar-v0.3",
+                radarEngineVersion = "quick-radar-v0.4",
                 type = mainIntent,
                 title = cardTitle,
                 description = summary,
@@ -74,7 +74,7 @@ class QuickCaptureRepository(
                     hasReminder || hasAction -> 4
                     else -> 3
                 },
-                confidence = if (dateSignal != null) 0.72f else 0.62f,
+                confidence = if (dateSignal != null) 0.74f else 0.62f,
                 status = "ACTIVE",
                 dueAt = dateSignal?.timestampMillis,
                 createdAt = now,
@@ -193,9 +193,18 @@ class QuickCaptureRepository(
     }
 
     private fun parseRelativeDate(text: String, nowMillis: Long): DateSignal? {
-        val match = Regex("через\\s+(\\d+)\\s*(минут[уы]?|час(?:а|ов)?|дн(?:я|ей|ь)?)").find(text) ?: return null
-        val amount = match.groupValues[1].toIntOrNull() ?: return null
-        val unit = match.groupValues[2]
+        val digitMatch = Regex("через\\s+(\\d+)\\s*(минут[уы]?|час(?:а|ов)?|дн(?:я|ей|ь)?)").find(text)
+        if (digitMatch != null) {
+            val amount = digitMatch.groupValues[1].toIntOrNull() ?: return null
+            val unit = digitMatch.groupValues[2]
+            return buildRelativeSignal(amount, unit, nowMillis)
+        }
+
+        val wordMatch = Regex("через\\s+(минуту|час|день)").find(text) ?: return null
+        return buildRelativeSignal(1, wordMatch.groupValues[1], nowMillis)
+    }
+
+    private fun buildRelativeSignal(amount: Int, unit: String, nowMillis: Long): DateSignal {
         val calendar = Calendar.getInstance().apply { timeInMillis = nowMillis }
         val unitLabel: String
         when {
