@@ -33,16 +33,7 @@ class QuickCaptureRepository(
         val hasRisk = hasRiskSignal(cleanText) || mainIntent == "RISK"
         val hasReminder = hasReminderSignal(cleanText) || dateSignal != null || mainIntent == "REMINDER"
         val cardTitle = buildCardTitle(summary, mainIntent)
-        val whyText = buildWhyText(
-            language = language,
-            intent = mainIntent,
-            hasAction = hasAction,
-            hasRisk = hasRisk,
-            hasReminder = hasReminder,
-            dateSignal = dateSignal,
-            cloudResult = cloudResult,
-            cloudError = cloudError
-        )
+        val whyText = buildWhyText(language, mainIntent, hasAction, hasRisk, hasReminder, dateSignal, cloudResult, cloudError)
 
         val captureId = database.captureDao().insertCapture(
             CaptureEntity(
@@ -59,8 +50,8 @@ class QuickCaptureRepository(
             AnalysisResultEntity(
                 captureId = captureId,
                 analyzedAt = now,
-                parserVersion = if (cloudResult != null) "yandex-ai-context-v0.1" else "context-parser-v0.5",
-                analyzerVersion = if (cloudResult != null) "cloud-ai-analyzer-v0.1" else "context-analyzer-v0.5",
+                parserVersion = if (cloudResult != null) "yandex-ai-context-v0.1+datetime-v0.1" else "context-parser-v0.6-datetime",
+                analyzerVersion = if (cloudResult != null) "cloud-ai-analyzer-v0.1" else "context-analyzer-v0.6",
                 isLatest = true,
                 language = language,
                 mainIntent = mainIntent,
@@ -82,7 +73,7 @@ class QuickCaptureRepository(
             RadarCardEntity(
                 captureId = captureId,
                 analysisId = analysisId,
-                radarEngineVersion = if (cloudResult != null) "ai-radar-v0.1" else "quick-radar-v0.5",
+                radarEngineVersion = if (cloudResult != null) "ai-radar-v0.1" else "quick-radar-v0.6",
                 type = mainIntent,
                 title = cardTitle,
                 description = cloudResult?.notification?.takeIf { it.isNotBlank() } ?: summary,
@@ -212,15 +203,10 @@ class QuickCaptureRepository(
 
     private fun parseDateSignal(text: String, nowMillis: Long): DateSignal? {
         val lower = text.lowercase(Locale.getDefault())
-        val relative = parseRelativeDate(lower, nowMillis)
-        if (relative != null) return relative
+        DateTimeParser.parse(lower, nowMillis)?.let { return it }
 
-        val explicitDateTime = parseDateWordWithOptionalTime(lower, nowMillis)
-        if (explicitDateTime != null) return explicitDateTime
-
-        val explicitTime = parseExplicitTime(lower, nowMillis)
-        if (explicitTime != null) return explicitTime
-
+        parseDateWordWithOptionalTime(lower, nowMillis)?.let { return it }
+        parseExplicitTime(lower, nowMillis)?.let { return it }
         return null
     }
 
@@ -245,22 +231,12 @@ class QuickCaptureRepository(
             calendar.set(Calendar.MINUTE, exactTime.minute)
             calendar.set(Calendar.SECOND, 0)
             calendar.set(Calendar.MILLISECOND, 0)
-            return DateSignal(
-                label = "$dateText ${exactTime.label}",
-                dateText = dateText,
-                timeText = exactTime.label,
-                timestampMillis = calendar.timeInMillis
-            )
+            return DateSignal("$dateText ${exactTime.label}", dateText, exactTime.label, calendar.timeInMillis)
         }
 
         val timeSignal = detectTimeOfDay(text)
         applyTimeOfDay(calendar, timeSignal)
-        return DateSignal(
-            label = buildDateLabel(dateText, timeSignal.label),
-            dateText = dateText,
-            timeText = timeSignal.label,
-            timestampMillis = calendar.timeInMillis
-        )
+        return DateSignal(buildDateLabel(dateText, timeSignal.label), dateText, timeSignal.label, calendar.timeInMillis)
     }
 
     private fun parseExplicitTime(text: String, nowMillis: Long): DateSignal? {
@@ -270,20 +246,11 @@ class QuickCaptureRepository(
         calendar.set(Calendar.MINUTE, time.minute)
         calendar.set(Calendar.SECOND, 0)
         calendar.set(Calendar.MILLISECOND, 0)
-
-        val dateText = if (calendar.timeInMillis > nowMillis) {
-            "сегодня"
-        } else {
+        val dateText = if (calendar.timeInMillis > nowMillis) "сегодня" else {
             calendar.add(Calendar.DAY_OF_YEAR, 1)
             "завтра"
         }
-
-        return DateSignal(
-            label = "$dateText ${time.label}",
-            dateText = dateText,
-            timeText = time.label,
-            timestampMillis = calendar.timeInMillis
-        )
+        return DateSignal("$dateText ${time.label}", dateText, time.label, calendar.timeInMillis)
     }
 
     private fun findClockTime(text: String): ClockTime? {
@@ -291,45 +258,7 @@ class QuickCaptureRepository(
         val hour = match.groupValues[1].toIntOrNull() ?: return null
         val minute = match.groupValues[2].toIntOrNull() ?: return null
         if (hour !in 0..23 || minute !in 0..59) return null
-        return ClockTime(hour = hour, minute = minute, label = "%02d:%02d".format(hour, minute))
-    }
-
-    private fun parseRelativeDate(text: String, nowMillis: Long): DateSignal? {
-        val digitMatch = Regex("через\\s+(\\d+)\\s*(минут[уы]?|час(?:а|ов)?|дн(?:я|ей|ь)?)").find(text)
-        if (digitMatch != null) {
-            val amount = digitMatch.groupValues[1].toIntOrNull() ?: return null
-            val unit = digitMatch.groupValues[2]
-            return buildRelativeSignal(amount, unit, nowMillis)
-        }
-
-        val wordMatch = Regex("через\\s+(минуту|час|день)").find(text) ?: return null
-        return buildRelativeSignal(1, wordMatch.groupValues[1], nowMillis)
-    }
-
-    private fun buildRelativeSignal(amount: Int, unit: String, nowMillis: Long): DateSignal {
-        val calendar = Calendar.getInstance().apply { timeInMillis = nowMillis }
-        val unitLabel: String
-        when {
-            unit.startsWith("минут") -> {
-                calendar.add(Calendar.MINUTE, amount)
-                unitLabel = plural(amount, "минуту", "минуты", "минут")
-            }
-            unit.startsWith("час") -> {
-                calendar.add(Calendar.HOUR_OF_DAY, amount)
-                unitLabel = plural(amount, "час", "часа", "часов")
-            }
-            else -> {
-                calendar.add(Calendar.DAY_OF_YEAR, amount)
-                unitLabel = plural(amount, "день", "дня", "дней")
-            }
-        }
-        val label = "через $amount $unitLabel"
-        return DateSignal(
-            label = label,
-            dateText = label,
-            timeText = null,
-            timestampMillis = calendar.timeInMillis
-        )
+        return ClockTime(hour, minute, "%02d:%02d".format(hour, minute))
     }
 
     private fun detectTimeOfDay(text: String): TimeSignal {
@@ -353,13 +282,11 @@ class QuickCaptureRepository(
     }
 
     private fun extractActionText(text: String): String {
-        return text
+        return DateTimeParser.removeRelativeDuration(text)
             .replace(Regex("(?i)https?://\\S+"), "")
             .replace(Regex("(?i)\\bнапомни(ть)?\\b"), "")
             .replace(Regex("(?i)\\bмне\\b"), "")
             .replace(Regex("(?i)\\bпожалуйста\\b"), "")
-            .replace(Regex("через\\s+\\d+\\s*(минут[уы]?|час(?:а|ов)?|дн(?:я|ей|ь)?)"), "")
-            .replace(Regex("через\\s+(минуту|час|день)"), "")
             .replace(Regex("\\b(сегодня|завтра|послезавтра)\\b"), "")
             .replace(Regex("\\b(утром|днём|днем|вечером)\\b"), "")
             .replace(Regex("(?:\\bв\\s*)?\\d{1,2}[:.]\\d{2}\\b"), "")
@@ -369,16 +296,6 @@ class QuickCaptureRepository(
             .removePrefix("надо ")
             .removePrefix("сделать ")
             .trim()
-    }
-
-    private fun plural(number: Int, one: String, few: String, many: String): String {
-        val n = number % 100
-        val n1 = number % 10
-        return if (n in 11..14) many else when (n1) {
-            1 -> one
-            2, 3, 4 -> few
-            else -> many
-        }
     }
 }
 
