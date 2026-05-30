@@ -5,6 +5,8 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
@@ -22,10 +24,13 @@ class OfflineVoiceCaptureActivity : Activity(), RecognitionListener {
     private lateinit var status: TextView
     private lateinit var partialText: TextView
     private lateinit var finalText: TextView
+    private lateinit var doneButton: Button
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var model: Model? = null
     private var speechService: SpeechService? = null
     private var lastPartial: String = ""
     private var finalResult: String = ""
+    private var isFinishingWithText = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -44,6 +49,7 @@ class OfflineVoiceCaptureActivity : Activity(), RecognitionListener {
     override fun onDestroy() {
         super.onDestroy()
         speechService?.stop()
+        mainHandler.removeCallbacksAndMessages(null)
         speechService?.shutdown()
         speechService = null
         model?.close()
@@ -118,10 +124,11 @@ class OfflineVoiceCaptureActivity : Activity(), RecognitionListener {
             addView(status, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(partialText, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(finalText, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            addView(Button(this@OfflineVoiceCaptureActivity).apply {
+            doneButton = Button(this@OfflineVoiceCaptureActivity).apply {
                 text = "Готово — отправить в Радар"
                 setOnClickListener { finishWithText() }
-            }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            }
+            addView(doneButton, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(Button(this@OfflineVoiceCaptureActivity).apply {
                 text = "Отмена"
                 setOnClickListener { finish() }
@@ -141,7 +148,9 @@ class OfflineVoiceCaptureActivity : Activity(), RecognitionListener {
             MODEL_STORAGE_DIR,
             { loadedModel ->
                 model = loadedModel
-                startListening(loadedModel)
+                status.text = "Готовлю микрофон..."
+                partialText.text = "Начинайте говорить после сообщения “Говорите”."
+                mainHandler.postDelayed({ startListening(loadedModel) }, 800L)
             },
             { exception ->
                 status.text = "Локальная модель не найдена. Добавьте Vosk-модель в assets/$MODEL_ASSET_DIR. Ошибка: ${exception.message ?: "без описания"}"
@@ -152,17 +161,23 @@ class OfflineVoiceCaptureActivity : Activity(), RecognitionListener {
     private fun startListening(loadedModel: Model) {
         val recognizer = Recognizer(loadedModel, SAMPLE_RATE)
         speechService = SpeechService(recognizer, SAMPLE_RATE).also { service ->
-            status.text = "Офлайн-режим слушает. Говорите спокойно, с паузами."
+            status.text = "Говорите. Можно делать паузы, завершите кнопкой Готово."
+            partialText.text = "Слушаю..."
             service.startListening(this)
         }
     }
 
     private fun finishWithText() {
-        val text = finalResult.ifBlank { lastPartial }.trim()
+        if (isFinishingWithText) return
+        val text = cleanRecognizedText(finalResult.ifBlank { lastPartial })
         if (text.isBlank()) {
             status.text = "Пока нечего отправлять. Скажите фразу или нажмите Отмена."
             return
         }
+        isFinishingWithText = true
+        doneButton.isEnabled = false
+        status.text = "Обрабатываю голос..."
+        partialText.text = text
         speechService?.stop()
         setResult(RESULT_OK, Intent().putExtra(EXTRA_RECOGNIZED_TEXT, text))
         finish()
@@ -178,11 +193,34 @@ class OfflineVoiceCaptureActivity : Activity(), RecognitionListener {
     }
 
     private fun mergeText(current: String, next: String): String {
-        val cleanNext = next.trim()
+        val cleanNext = cleanRecognizedText(next)
         if (cleanNext.isBlank()) return current
         if (current.isBlank()) return cleanNext
         if (current.endsWith(cleanNext, ignoreCase = true)) return current
         return "$current $cleanNext".replace(Regex("\\s+"), " ").trim()
+    }
+
+
+    private fun cleanRecognizedText(text: String): String {
+        val normalized = text
+            .lowercase()
+            .replace('ё', 'е')
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        if (normalized.isBlank()) return ""
+
+        val words = normalized.split(" ").filter { it.isNotBlank() }.toMutableList()
+        if (words.size >= 2 && looksLikeStartGarbage(words.first())) {
+            words.removeAt(0)
+        }
+        return words.joinToString(" ").trim()
+    }
+
+    private fun looksLikeStartGarbage(word: String): Boolean {
+        if (word.length <= 1) return true
+        if (word.length <= 3 && word !in ALLOWED_SHORT_FIRST_WORDS) return true
+        val vowels = word.count { it in "аеёиоуыэюя" }
+        return word.length >= 5 && vowels == 0
     }
 
     companion object {
@@ -191,5 +229,6 @@ class OfflineVoiceCaptureActivity : Activity(), RecognitionListener {
         private const val SAMPLE_RATE = 16_000.0f
         private const val MODEL_ASSET_DIR = "model-ru"
         private const val MODEL_STORAGE_DIR = "vosk-model-ru"
+        private val ALLOWED_SHORT_FIRST_WORDS = setOf("я", "и", "в", "к", "на", "за", "до", "от", "по", "ну", "да", "не")
     }
 }
