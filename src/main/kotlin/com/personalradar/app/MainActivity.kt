@@ -11,6 +11,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.room.Room
 import com.personalradar.app.core.database.AppDatabase
+import com.personalradar.app.core.database.entity.RadarCardEntity
 import com.personalradar.app.quick.QuickCaptureRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,6 +19,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class MainActivity : Activity() {
+    private lateinit var database: AppDatabase
     private lateinit var repository: QuickCaptureRepository
     private lateinit var input: EditText
     private lateinit var status: TextView
@@ -26,7 +28,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val database = Room.databaseBuilder(
+        database = Room.databaseBuilder(
             applicationContext,
             AppDatabase::class.java,
             "personal-ai-radar.db"
@@ -34,7 +36,7 @@ class MainActivity : Activity() {
         repository = QuickCaptureRepository(database)
 
         setContentView(buildScreen())
-        refreshRadarCards(database)
+        refreshRadarCards()
     }
 
     private fun buildScreen(): ScrollView {
@@ -87,7 +89,7 @@ class MainActivity : Activity() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val result = repository.addCapture(text)
-                val cards = repositoryCardsSnapshot()
+                val cards = database.radarCardDao().getActiveCardsSnapshot()
                 withContext(Dispatchers.Main) {
                     input.setText("")
                     status.text = "Saved Capture #${result.captureId}; Radar card #${result.cardId} created."
@@ -102,17 +104,14 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun refreshRadarCards(database: AppDatabase) {
+    private fun refreshRadarCards() {
         CoroutineScope(Dispatchers.IO).launch {
             val cards = database.radarCardDao().getActiveCardsSnapshot()
             withContext(Dispatchers.Main) { renderCards(cards) }
         }
     }
 
-    private suspend fun repositoryCardsSnapshot() =
-        RoomHolder.database.radarCardDao().getActiveCardsSnapshot()
-
-    private fun renderCards(cards: List<com.personalradar.app.core.database.entity.RadarCardEntity>) {
+    private fun renderCards(cards: List<RadarCardEntity>) {
         radarList.removeAllViews()
         if (cards.isEmpty()) {
             radarList.addView(TextView(this).apply {
@@ -129,9 +128,5 @@ class MainActivity : Activity() {
                 setPadding(0, 16, 0, 16)
             })
         }
-    }
-
-    private object RoomHolder {
-        lateinit var database: AppDatabase
     }
 }
