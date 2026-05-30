@@ -57,7 +57,7 @@ class MainActivity : Activity() {
         }
 
         modeButton = Button(this).apply {
-            text = "Показать скрытые"
+            text = "Скрытые карточки"
             setOnClickListener { toggleHiddenMode() }
         }
 
@@ -109,9 +109,29 @@ class MainActivity : Activity() {
 
     private fun toggleHiddenMode() {
         showHiddenCards = !showHiddenCards
-        modeButton.text = if (showHiddenCards) "Показать активные" else "Показать скрытые"
+        modeButton.text = if (showHiddenCards) "Активный Радар" else "Скрытые карточки"
         status.text = if (showHiddenCards) "Показаны скрытые карточки." else "Показан активный Радар."
         refreshRadarCards()
+    }
+
+    private fun switchToActiveRadar(message: String) {
+        showHiddenCards = false
+        modeButton.text = "Скрытые карточки"
+        status.text = message
+        refreshRadarCards()
+    }
+
+    private fun restoreHiddenCard(cardId: Long) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val state = controller.restoreHiddenCardAndLoadRadar(cardId, showHidden = false)
+                withContext(Dispatchers.Main) { switchToActiveRadar(state.message) }
+            } catch (t: Throwable) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, t.message ?: "Не удалось вернуть карточку", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     private fun refreshRadarCards() {
@@ -170,9 +190,7 @@ class MainActivity : Activity() {
             if (showHiddenCards) {
                 buttons.addView(Button(this).apply {
                     text = "Вернуть"
-                    setOnClickListener {
-                        runCardAction { controller.restoreHiddenCardAndLoadRadar(card.id, showHiddenCards) }
-                    }
+                    setOnClickListener { restoreHiddenCard(card.id) }
                 })
             } else {
                 buttons.addView(Button(this).apply {
