@@ -3,7 +3,6 @@ package com.personalradar.app
 import android.Manifest
 import android.app.Activity
 import android.app.AlarmManager
-import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -14,7 +13,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.speech.RecognizerIntent
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
@@ -73,8 +71,7 @@ class MainActivity : Activity() {
         }
 
         val spokenText = data
-            ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-            ?.firstOrNull()
+            ?.getStringExtra(com.personalradar.app.voice.OfflineVoiceCaptureActivity.EXTRA_RECOGNIZED_TEXT)
             ?.trim()
             .orEmpty()
 
@@ -370,23 +367,11 @@ class MainActivity : Activity() {
     }
 
     private fun startVoiceCapture() {
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU")
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "Скажите мысль, задачу или напоминание")
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 8_000)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2_000)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2_500)
-        }
-        try {
-            status.text = "Открываю голосовой захват. Можно говорить с небольшими паузами."
-            startActivityForResult(intent, VOICE_INPUT_REQUEST_CODE)
-        } catch (_: ActivityNotFoundException) {
-            status.text = "На телефоне нет системного распознавания речи. Можно использовать голосовой ввод клавиатуры."
-        }
+        status.text = "Открываю офлайн-голос. Говорите спокойно, завершите кнопкой Готово."
+        startActivityForResult(
+            Intent(this, com.personalradar.app.voice.OfflineVoiceCaptureActivity::class.java),
+            VOICE_INPUT_REQUEST_CODE
+        )
     }
 
     private fun handleIncomingShare(incomingIntent: Intent?) {
