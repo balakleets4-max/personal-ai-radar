@@ -7,11 +7,16 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import com.personalradar.app.core.database.entity.RadarCardEntity
 
 class ReminderScheduler(
     private val context: Context
 ) {
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val fallbackTimers = mutableMapOf<Long, Runnable>()
+
     fun canPostNotifications(): Boolean {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
@@ -25,7 +30,8 @@ class ReminderScheduler(
 
     fun schedule(card: RadarCardEntity): ReminderScheduleResult {
         val dueAt = card.dueAt ?: return ReminderScheduleResult.NotScheduled("В карточке нет времени")
-        if (dueAt <= System.currentTimeMillis()) {
+        val delayMs = dueAt - System.currentTimeMillis()
+        if (delayMs <= 0L) {
             return ReminderScheduleResult.NotScheduled("Время уже прошло")
         }
         if (!canPostNotifications()) {
@@ -34,7 +40,8 @@ class ReminderScheduler(
 
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
-            return ReminderScheduleResult.NotScheduled("Нет разрешения на точные будильники")
+            scheduleFallbackTimer(card, delayMs)
+            return ReminderScheduleResult.Scheduled(dueAt, exact = false)
         }
 
         cancel(card.id)
@@ -46,6 +53,8 @@ class ReminderScheduler(
             alarmManager.setExact(AlarmManager.RTC_WAKEUP, dueAt, pendingIntent)
         }
 
+        scheduleFallbackTimer(card, delayMs)
+
         return ReminderScheduleResult.Scheduled(dueAt, exact = true)
     }
 
@@ -56,20 +65,35 @@ class ReminderScheduler(
             alarmManager.cancel(pendingIntent)
             pendingIntent.cancel()
         }
+        fallbackTimers.remove(cardId)?.let { mainHandler.removeCallbacks(it) }
+    }
+
+    private fun scheduleFallbackTimer(card: RadarCardEntity, delayMs: Long) {
+        if (delayMs > FALLBACK_MAX_DELAY_MS) return
+        fallbackTimers.remove(card.id)?.let { mainHandler.removeCallbacks(it) }
+        val runnable = Runnable {
+            fallbackTimers.remove(card.id)
+            context.sendBroadcast(buildReminderIntent(card))
+        }
+        fallbackTimers[card.id] = runnable
+        mainHandler.postDelayed(runnable, delayMs)
     }
 
     private fun buildPendingIntent(card: RadarCardEntity, modeFlag: Int): PendingIntent {
-        val intent = Intent(context, ReminderReceiver::class.java).apply {
+        return PendingIntent.getBroadcast(
+            context,
+            card.id.toInt(),
+            buildReminderIntent(card),
+            modeFlag or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    private fun buildReminderIntent(card: RadarCardEntity): Intent {
+        return Intent(context, ReminderReceiver::class.java).apply {
             putExtra(ReminderReceiver.EXTRA_CARD_ID, card.id)
             putExtra(ReminderReceiver.EXTRA_TITLE, "Напоминание")
             putExtra(ReminderReceiver.EXTRA_TEXT, buildHumanNotificationText(card))
         }
-        return PendingIntent.getBroadcast(
-            context,
-            card.id.toInt(),
-            intent,
-            modeFlag or PendingIntent.FLAG_IMMUTABLE
-        )
     }
 
     private fun buildCancelPendingIntent(cardId: Long): PendingIntent? {
@@ -120,6 +144,10 @@ class ReminderScheduler(
             .removePrefix("надо ")
             .removePrefix("сделать ")
             .trim()
+    }
+
+    companion object {
+        private const val FALLBACK_MAX_DELAY_MS = 5 * 60 * 1000L
     }
 }
 
