@@ -190,6 +190,25 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun scheduleRestoredReminder(state: CaptureRadarScreenState) {
+        val card = state.restoredCard ?: return
+        if (card.dueAt == null) return
+        val result = AppContainer.get(applicationContext).reminderScheduler.schedule(card)
+        status.text = when (result) {
+            is ReminderScheduleResult.Scheduled -> {
+                val mode = if (result.exact) "точное" else "примерное"
+                "${state.message}\nУведомление снова запланировано ($mode): ${formatDueAt(result.dueAt)}"
+            }
+            is ReminderScheduleResult.NotScheduled -> "${state.message}\nУведомление не запланировано: ${result.reason}"
+        }
+    }
+
+    private fun cancelReminderIfNeeded(state: CaptureRadarScreenState) {
+        val cardId = state.cancelledReminderCardId ?: return
+        AppContainer.get(applicationContext).reminderScheduler.cancel(cardId)
+        status.text = "${state.message}\nЗапланированное уведомление отменено."
+    }
+
     private fun switchMode(mode: RadarCardViewMode) {
         viewMode = mode
         status.text = when (mode) {
@@ -200,17 +219,11 @@ class MainActivity : Activity() {
         refreshRadarCards()
     }
 
-    private fun switchToActiveRadar(message: String) {
-        viewMode = RadarCardViewMode.ACTIVE
-        status.text = message
-        refreshRadarCards()
-    }
-
     private fun restoreCard(cardId: Long) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val state = controller.restoreCardToActiveAndLoadRadar(cardId, RadarCardViewMode.ACTIVE)
-                withContext(Dispatchers.Main) { switchToActiveRadar(state.message) }
+                withContext(Dispatchers.Main) { renderState(state) }
             } catch (t: Throwable) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@MainActivity, t.message ?: "Не удалось вернуть карточку", Toast.LENGTH_LONG).show()
@@ -223,11 +236,7 @@ class MainActivity : Activity() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val state = controller.deleteCardAndLoadRadar(cardId, viewMode)
-                withContext(Dispatchers.Main) {
-                    AppContainer.get(applicationContext).reminderScheduler.cancel(cardId)
-                    renderState(state)
-                    status.text = "${state.message}\nЗапланированное уведомление отменено."
-                }
+                withContext(Dispatchers.Main) { renderState(state) }
             } catch (t: Throwable) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@MainActivity, t.message ?: "Не удалось удалить карточку", Toast.LENGTH_LONG).show()
@@ -263,6 +272,8 @@ class MainActivity : Activity() {
         status.text = state.message
         renderCounters(state.counters)
         renderCards(state.cards)
+        cancelReminderIfNeeded(state)
+        scheduleRestoredReminder(state)
     }
 
     private fun renderCounters(counters: RadarCounters) {
