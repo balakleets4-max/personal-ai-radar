@@ -95,7 +95,7 @@ object OfflineTextPolisher {
     private fun cleanup(text: String): String {
         return text
             .replace(Regex("\\s+"), " ")
-            .replace(Regex("\\s+([,.!?;:])"), "$1")
+            .replace(Regex("\\s+([,.!?;:])"), "\$1")
             .trim(' ', ',', '.', '-', '—', ':', ';')
             .trim()
     }
