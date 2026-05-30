@@ -22,6 +22,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : Activity() {
     private lateinit var controller: CaptureRadarController
@@ -229,6 +232,7 @@ class MainActivity : Activity() {
             .replace("тип: ", "")
             .replace("; есть сигнал действия", "; действие")
             .replace("; есть сигнал времени/напоминания", "; время")
+            .replace("; когда: ", " · когда: ")
             .replace("; ", " · ")
     }
 
@@ -247,6 +251,10 @@ class MainActivity : Activity() {
         val title = normalizeCardText(card.title)
         val description = normalizeCardText(card.description)
         return description.isNotBlank() && description != title && !title.contains(description) && !description.contains(title)
+    }
+
+    private fun formatDueAt(dueAt: Long): String {
+        return SimpleDateFormat("dd.MM HH:mm", Locale.getDefault()).format(Date(dueAt))
     }
 
     private fun renderCards(cards: List<RadarCardEntity>) {
@@ -284,6 +292,15 @@ class MainActivity : Activity() {
                     text = card.description
                     textSize = 15f
                     setTextColor(Color.rgb(45, 45, 52))
+                    setPadding(0, 0, 0, 8)
+                })
+            }
+            if (card.dueAt != null) {
+                box.addView(TextView(this).apply {
+                    text = "Когда: ${formatDueAt(card.dueAt)}"
+                    textSize = 15f
+                    typeface = Typeface.DEFAULT_BOLD
+                    setTextColor(Color.rgb(42, 100, 70))
                     setPadding(0, 0, 0, 8)
                 })
             }
