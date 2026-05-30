@@ -23,6 +23,8 @@ class MainActivity : Activity() {
     private lateinit var input: EditText
     private lateinit var status: TextView
     private lateinit var radarList: LinearLayout
+    private lateinit var modeButton: Button
+    private var showHiddenCards = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,6 +56,11 @@ class MainActivity : Activity() {
             setOnClickListener { saveCapture() }
         }
 
+        modeButton = Button(this).apply {
+            text = "Показать скрытые"
+            setOnClickListener { toggleHiddenMode() }
+        }
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(24, 32, 24, 32)
@@ -75,6 +82,7 @@ class MainActivity : Activity() {
                 textSize = 24f
                 setPadding(0, 24, 0, 8)
             })
+            addView(modeButton, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(radarList, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
 
@@ -85,7 +93,7 @@ class MainActivity : Activity() {
         val text = input.text.toString()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val state = controller.saveCaptureAndLoadRadar(text)
+                val state = controller.saveCaptureAndLoadRadar(text, showHiddenCards)
                 withContext(Dispatchers.Main) {
                     input.setText("")
                     renderState(state)
@@ -99,9 +107,16 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun toggleHiddenMode() {
+        showHiddenCards = !showHiddenCards
+        modeButton.text = if (showHiddenCards) "Показать активные" else "Показать скрытые"
+        status.text = if (showHiddenCards) "Показаны скрытые карточки." else "Показан активный Радар."
+        refreshRadarCards()
+    }
+
     private fun refreshRadarCards() {
         CoroutineScope(Dispatchers.IO).launch {
-            val cards = controller.loadRadarCards()
+            val cards = controller.loadRadarCards(showHiddenCards)
             withContext(Dispatchers.Main) { renderCards(cards) }
         }
     }
@@ -126,9 +141,10 @@ class MainActivity : Activity() {
 
     private fun renderCards(cards: List<RadarCardEntity>) {
         radarList.removeAllViews()
+
         if (cards.isEmpty()) {
             radarList.addView(TextView(this).apply {
-                text = "Активных карточек пока нет."
+                text = if (showHiddenCards) "Скрытых карточек пока нет." else "Активных карточек пока нет."
                 textSize = 16f
                 setPadding(0, 12, 0, 12)
             })
@@ -140,20 +156,40 @@ class MainActivity : Activity() {
                 orientation = LinearLayout.VERTICAL
                 setPadding(0, 16, 0, 20)
             }
+
             box.addView(TextView(this).apply {
                 text = "${card.title}\n${card.description}\nПочему в Радаре: ${card.whyText}\nПриоритет: ${card.priority}"
                 textSize = 16f
                 setPadding(0, 0, 0, 8)
             })
-            val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            buttons.addView(Button(this).apply {
-                text = "Готово"
-                setOnClickListener { runCardAction { controller.markCardDoneAndLoadRadar(card.id) } }
-            })
-            buttons.addView(Button(this).apply {
-                text = "Скрыть"
-                setOnClickListener { runCardAction { controller.hideCardAndLoadRadar(card.id) } }
-            })
+
+            val buttons = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+            }
+
+            if (showHiddenCards) {
+                buttons.addView(Button(this).apply {
+                    text = "Вернуть"
+                    setOnClickListener {
+                        runCardAction { controller.restoreHiddenCardAndLoadRadar(card.id, showHiddenCards) }
+                    }
+                })
+            } else {
+                buttons.addView(Button(this).apply {
+                    text = "Готово"
+                    setOnClickListener {
+                        runCardAction { controller.markCardDoneAndLoadRadar(card.id, showHiddenCards) }
+                    }
+                })
+
+                buttons.addView(Button(this).apply {
+                    text = "Скрыть"
+                    setOnClickListener {
+                        runCardAction { controller.hideCardAndLoadRadar(card.id) }
+                    }
+                })
+            }
+
             box.addView(buttons)
             radarList.addView(box, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
