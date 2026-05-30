@@ -109,7 +109,7 @@ class MainActivity : Activity() {
                 setPadding(0, 0, 0, 8)
             })
             addView(TextView(this@MainActivity).apply {
-                text = "Запишите обычной фразой то, что нужно не потерять."
+                text = "Тихий помощник: собирает важное из разрешённых источников и напоминает вовремя."
                 textSize = 15f
                 setTextColor(Color.rgb(80, 80, 88))
                 setPadding(0, 0, 0, 14)
@@ -117,6 +117,7 @@ class MainActivity : Activity() {
             addView(input, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(saveButton, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(status, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            addView(buildSourcesSection(), ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(TextView(this@MainActivity).apply {
                 text = "Радар"
                 textSize = 23f
@@ -127,6 +128,56 @@ class MainActivity : Activity() {
             addView(radarList, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
         return ScrollView(this).apply { addView(root) }
+    }
+
+    private fun buildSourcesSection(): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = softPanelBackground()
+            setPadding(20, 18, 20, 18)
+            addView(TextView(this@MainActivity).apply {
+                text = "Источники Радара"
+                textSize = 21f
+                typeface = Typeface.DEFAULT_BOLD
+                setPadding(0, 0, 0, 6)
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = "Здесь будет управление тем, откуда помощник берёт важные сигналы. Сейчас это первый экран-подготовка."
+                textSize = 14f
+                setTextColor(Color.rgb(80, 80, 88))
+                setPadding(0, 0, 0, 12)
+            })
+            addView(sourceRow("Ручной ввод", "включён", "Можно вручную добавить мысль, дело или напоминание."))
+            addView(sourceRow("Уведомления Радара", "частично", "Приложение уже умеет отправлять собственные напоминания."))
+            addView(sourceRow("Поделиться в Радар", "следующий шаг", "Текст из Telegram, браузера, заметок и почты можно будет отправлять в Радар."))
+            addView(sourceRow("Календарь", "скоро", "Радар сможет читать события календаря с разрешения владельца."))
+            addView(sourceRow("Уведомления телефона", "позже", "Будущий источник для поиска важных сообщений и событий."))
+            addView(sourceRow("Контакты, ссылки, картинки", "позже", "Будут подключаться осторожно, только с явным разрешением."))
+        }.also { panel ->
+            panel.layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 14, 0, 8) }
+        }
+    }
+
+    private fun sourceRow(title: String, state: String, description: String): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 8, 0, 8)
+            addView(TextView(this@MainActivity).apply {
+                text = "$title — $state"
+                textSize = 16f
+                typeface = Typeface.DEFAULT_BOLD
+                setTextColor(Color.rgb(45, 45, 52))
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = description
+                textSize = 13f
+                setTextColor(Color.rgb(90, 90, 100))
+                setPadding(0, 2, 0, 0)
+            })
+        }
     }
 
     private fun requestNotificationPermissionIfNeeded() {
@@ -290,6 +341,14 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun softPanelBackground(): GradientDrawable {
+        return GradientDrawable().apply {
+            setColor(Color.rgb(248, 248, 252))
+            setStroke(2, Color.rgb(224, 224, 232))
+            cornerRadius = 20f
+        }
+    }
+
     private fun cardBackground(): GradientDrawable {
         return GradientDrawable().apply {
             setColor(Color.rgb(255, 255, 255))
@@ -355,7 +414,6 @@ class MainActivity : Activity() {
                 background = cardBackground()
                 setPadding(20, 18, 20, 18)
             }
-
             box.addView(TextView(this).apply {
                 text = "${typeLabel(card.type)} · Приоритет ${card.priority}"
                 textSize = 14f
@@ -392,7 +450,6 @@ class MainActivity : Activity() {
                 setTextColor(Color.rgb(90, 90, 100))
                 setPadding(0, 0, 0, 10)
             })
-
             val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             when (viewMode) {
                 RadarCardViewMode.ACTIVE -> {
