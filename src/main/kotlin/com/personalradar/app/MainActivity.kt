@@ -12,6 +12,7 @@ import android.widget.Toast
 import com.personalradar.app.core.database.entity.RadarCardEntity
 import com.personalradar.app.di.AppContainer
 import com.personalradar.app.quick.CaptureRadarController
+import com.personalradar.app.quick.CaptureRadarScreenState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -25,9 +26,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         controller = AppContainer.get(applicationContext).captureRadarController
-
         setContentView(buildScreen())
         refreshRadarCards()
     }
@@ -89,8 +88,7 @@ class MainActivity : Activity() {
                 val state = controller.saveCaptureAndLoadRadar(text)
                 withContext(Dispatchers.Main) {
                     input.setText("")
-                    status.text = state.message
-                    renderCards(state.cards)
+                    renderState(state)
                 }
             } catch (t: Throwable) {
                 withContext(Dispatchers.Main) {
@@ -108,6 +106,24 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun runCardAction(action: suspend () -> CaptureRadarScreenState) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val state = action()
+                withContext(Dispatchers.Main) { renderState(state) }
+            } catch (t: Throwable) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, t.message ?: "Действие не выполнено", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun renderState(state: CaptureRadarScreenState) {
+        status.text = state.message
+        renderCards(state.cards)
+    }
+
     private fun renderCards(cards: List<RadarCardEntity>) {
         radarList.removeAllViews()
         if (cards.isEmpty()) {
@@ -120,11 +136,26 @@ class MainActivity : Activity() {
         }
 
         cards.forEach { card ->
-            radarList.addView(TextView(this).apply {
+            val box = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, 16, 0, 20)
+            }
+            box.addView(TextView(this).apply {
                 text = "${card.title}\n${card.description}\nПочему в Радаре: ${card.whyText}\nПриоритет: ${card.priority}"
                 textSize = 16f
-                setPadding(0, 16, 0, 16)
+                setPadding(0, 0, 0, 8)
             })
+            val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            buttons.addView(Button(this).apply {
+                text = "Готово"
+                setOnClickListener { runCardAction { controller.markCardDoneAndLoadRadar(card.id) } }
+            })
+            buttons.addView(Button(this).apply {
+                text = "Скрыть"
+                setOnClickListener { runCardAction { controller.hideCardAndLoadRadar(card.id) } }
+            })
+            box.addView(buttons)
+            radarList.addView(box, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
     }
 }
