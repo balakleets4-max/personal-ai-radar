@@ -5,11 +5,13 @@ import androidx.room.Room
 import com.personalradar.app.core.database.AppDatabase
 import com.personalradar.app.quick.CaptureRadarController
 import com.personalradar.app.quick.QuickCaptureRepository
+import com.personalradar.app.reminder.ReminderScheduler
 
 class AppContainer private constructor(
     val database: AppDatabase,
     val quickCaptureRepository: QuickCaptureRepository,
-    val captureRadarController: CaptureRadarController
+    val captureRadarController: CaptureRadarController,
+    val reminderScheduler: ReminderScheduler
 ) {
     companion object {
         @Volatile
@@ -29,7 +31,8 @@ class AppContainer private constructor(
             ).build()
             val repository = QuickCaptureRepository(database)
             val controller = CaptureRadarController(database, repository)
-            return AppContainer(database, repository, controller)
+            val reminderScheduler = ReminderScheduler(context)
+            return AppContainer(database, repository, controller, reminderScheduler)
         }
     }
 }
