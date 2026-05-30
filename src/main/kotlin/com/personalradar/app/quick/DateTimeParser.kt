@@ -55,16 +55,24 @@ object DateTimeParser {
         val result = mutableListOf<DurationPart>()
         var index = 0
         while (index < tokens.size) {
-            val amountParse = parseAmount(tokens, index) ?: run {
+            val amountParse = parseAmount(tokens, index)
+            if (amountParse == null) {
                 index++
                 continue
             }
+
             val unitIndex = amountParse.nextIndex
-            val unitToken = tokens.getOrNull(unitIndex) ?: break
-            val unit = parseUnit(unitToken) ?: run {
+            val unitToken = tokens.getOrNull(unitIndex)
+            if (unitToken == null) {
+                break
+            }
+
+            val unit = parseUnit(unitToken)
+            if (unit == null) {
                 index++
                 continue
             }
+
             result.add(DurationPart(amountParse.amount, unit))
             index = unitIndex + 1
         }
