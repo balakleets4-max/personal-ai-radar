@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import com.personalradar.app.MainActivity
 import com.personalradar.app.core.database.entity.RadarCardEntity
 
 class ReminderScheduler(
@@ -47,7 +48,12 @@ class ReminderScheduler(
         cancel(card.id)
 
         val pendingIntent = buildPendingIntent(card, PendingIntent.FLAG_UPDATE_CURRENT)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        if (delayMs <= ALARM_CLOCK_MAX_DELAY_MS && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            alarmManager.setAlarmClock(
+                AlarmManager.AlarmClockInfo(dueAt, buildOpenAppPendingIntent(card.id)),
+                pendingIntent
+            )
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, dueAt, pendingIntent)
         } else {
             alarmManager.setExact(AlarmManager.RTC_WAKEUP, dueAt, pendingIntent)
@@ -88,6 +94,18 @@ class ReminderScheduler(
         )
     }
 
+    private fun buildOpenAppPendingIntent(cardId: Long): PendingIntent {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        return PendingIntent.getActivity(
+            context,
+            cardId.toInt(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
     private fun buildReminderIntent(card: RadarCardEntity): Intent {
         return Intent(context, ReminderReceiver::class.java).apply {
             putExtra(ReminderReceiver.EXTRA_CARD_ID, card.id)
@@ -108,18 +126,34 @@ class ReminderScheduler(
 
     private fun buildHumanNotificationText(card: RadarCardEntity): String {
         val description = card.description.trim()
+        if (description.isNotBlank() && card.whyText.contains("ИИ: Yandex AI")) {
+            return normalizeAiNotification(description)
+        }
+        if (description.startsWith("Напоминаю:", ignoreCase = true) || description.startsWith("Пора ", ignoreCase = true)) {
+            return normalizeAiNotification(description)
+        }
+
         val titleAction = cleanActionText(card.title)
         val descriptionAction = cleanActionText(description)
         val action = when {
-            descriptionAction.isNotBlank() && !descriptionAction.startsWith("напоминаю:") -> descriptionAction
+            descriptionAction.isNotBlank() -> descriptionAction
             titleAction.isNotBlank() -> titleAction
             description.isNotBlank() -> description
             else -> "откройте Личный ИИ-Радар"
         }
-        return if (action.startsWith("Напоминаю:", ignoreCase = true)) {
-            action.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
-        } else {
-            "Напоминаю: нужно $action"
+        return when {
+            action.startsWith("Напоминаю:", ignoreCase = true) -> normalizeAiNotification(action)
+            action.startsWith("пора ", ignoreCase = true) -> "Напоминаю: ${action.replaceFirstChar { it.lowercase() }}."
+            else -> "Напоминаю: нужно $action."
+        }
+    }
+
+    private fun normalizeAiNotification(text: String): String {
+        val clean = text.trim().trimEnd('.', '!', '?')
+        return when {
+            clean.startsWith("Напоминаю:", ignoreCase = true) -> "$clean."
+            clean.startsWith("Пора ", ignoreCase = true) -> "Напоминаю: ${clean.replaceFirstChar { it.lowercase() }}."
+            else -> clean.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() } + "."
         }
     }
 
@@ -133,8 +167,9 @@ class ReminderScheduler(
             .replace(Regex("\\bнапомни(ть)?\\b"), "")
             .replace(Regex("\\bнапоминаю:?\\b"), "")
             .replace(Regex("\\bмне\\b"), "")
-            .replace(Regex("через\\s+\\d+\\s*(минут[уы]?|час(?:а|ов)?|дн(?:я|ей|ь)?)"), "")
-            .replace(Regex("через\\s+(минуту|час|день)"), "")
+            .replace(Regex("через\\s+\\d+\\s*(секунд[уы]?|минут[уы]?|час(?:а|ов)?|дн(?:я|ей|ь)?)"), "")
+            .replace(Regex("через\\s+(секунду|минуту|час|день)"), "")
+            .replace(Regex("\\s+и\\s+\\d+\\s*секунд[уы]?"), "")
             .replace(Regex("\\b(сегодня|завтра|послезавтра)\\b"), "")
             .replace(Regex("\\b(утром|днём|днем|вечером)\\b"), "")
             .replace(Regex("(?:\\bв\\s*)?\\d{1,2}[:.]\\d{2}\\b"), "")
@@ -148,6 +183,7 @@ class ReminderScheduler(
 
     companion object {
         private const val FALLBACK_MAX_DELAY_MS = 5 * 60 * 1000L
+        private const val ALARM_CLOCK_MAX_DELAY_MS = 10 * 60 * 1000L
     }
 }
 
