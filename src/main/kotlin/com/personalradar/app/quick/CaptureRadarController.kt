@@ -38,10 +38,12 @@ class CaptureRadarController(
     suspend fun saveCaptureAndLoadRadar(text: String, mode: RadarCardViewMode): CaptureRadarScreenState {
         val result = repository.addCapture(text)
         val snapshot = loadRadarSnapshot(mode)
+        val createdCard = database.radarCardDao().getCardById(result.cardId)
         return CaptureRadarScreenState(
             message = "Захват #${result.captureId} сохранён. Карточка Радара #${result.cardId} создана.",
             cards = snapshot.cards,
-            counters = snapshot.counters
+            counters = snapshot.counters,
+            createdCard = createdCard
         )
     }
 
@@ -129,5 +131,6 @@ data class RadarSnapshot(
 data class CaptureRadarScreenState(
     val message: String,
     val cards: List<RadarCardEntity>,
-    val counters: RadarCounters
+    val counters: RadarCounters,
+    val createdCard: RadarCardEntity? = null
 )
