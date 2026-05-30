@@ -1,5 +1,6 @@
 package com.personalradar.app.ai
 
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.OutputStreamWriter
@@ -76,22 +77,21 @@ class YandexAiClient {
             Если времени нет, due_text пустой.
         """.trimIndent()
 
+        val messages = JSONArray()
+            .put(JSONObject().put("role", "system").put("text", systemPrompt))
+            .put(JSONObject().put("role", "user").put("text", text.take(6000)))
+
         val root = JSONObject()
-        root.put("modelUri", "gpt://$catalogId/yandexgpt-lite")
-        root.put(
-            "completionOptions",
-            JSONObject()
-                .put("stream", false)
-                .put("temperature", 0.2)
-                .put("maxTokens", 600)
-        )
-        root.put(
-            "messages",
-            listOf(
-                JSONObject().put("role", "system").put("text", systemPrompt),
-                JSONObject().put("role", "user").put("text", text.take(6000))
+            .put("modelUri", "gpt://$catalogId/yandexgpt-lite")
+            .put(
+                "completionOptions",
+                JSONObject()
+                    .put("stream", false)
+                    .put("temperature", 0.2)
+                    .put("maxTokens", "600")
             )
-        )
+            .put("messages", messages)
+
         return root.toString()
     }
 
