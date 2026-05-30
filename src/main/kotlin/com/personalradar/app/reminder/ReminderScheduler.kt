@@ -33,20 +33,18 @@ class ReminderScheduler(
         }
 
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
+            return ReminderScheduleResult.NotScheduled("Нет разрешения на точные будильники")
+        }
+
         val pendingIntent = buildPendingIntent(card, PendingIntent.FLAG_UPDATE_CURRENT)
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && alarmManager.canScheduleExactAlarms()) {
-            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, dueAt, pendingIntent)
-            return ReminderScheduleResult.Scheduled(dueAt, exact = true)
-        }
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, dueAt, pendingIntent)
+            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, dueAt, pendingIntent)
         } else {
-            alarmManager.set(AlarmManager.RTC_WAKEUP, dueAt, pendingIntent)
+            alarmManager.setExact(AlarmManager.RTC_WAKEUP, dueAt, pendingIntent)
         }
 
-        return ReminderScheduleResult.Scheduled(dueAt, exact = false)
+        return ReminderScheduleResult.Scheduled(dueAt, exact = true)
     }
 
     fun cancel(cardId: Long) {
@@ -62,7 +60,7 @@ class ReminderScheduler(
         val intent = Intent(context, ReminderReceiver::class.java).apply {
             putExtra(ReminderReceiver.EXTRA_CARD_ID, card.id)
             putExtra(ReminderReceiver.EXTRA_TITLE, "Напоминание")
-            putExtra(ReminderReceiver.EXTRA_TEXT, cleanNotificationText(card.title))
+            putExtra(ReminderReceiver.EXTRA_TEXT, buildHumanNotificationText(card.title))
         }
         return PendingIntent.getBroadcast(
             context,
@@ -82,14 +80,32 @@ class ReminderScheduler(
         )
     }
 
-    private fun cleanNotificationText(title: String): String {
+    private fun buildHumanNotificationText(title: String): String {
+        val action = cleanActionText(title)
+        return if (action.isBlank()) {
+            "Напоминаю: откройте Личный ИИ-Радар"
+        } else {
+            "Напоминаю: нужно $action"
+        }
+    }
+
+    private fun cleanActionText(title: String): String {
         return title
             .removePrefix("Напоминание:")
             .removePrefix("Задача:")
             .removePrefix("Мысль:")
             .removePrefix("Риск:")
+            .lowercase()
+            .replace(Regex("\\bнапомни(ть)?\\b"), "")
+            .replace(Regex("\\bмне\\b"), "")
+            .replace(Regex("через\\s+\\d+\\s*(минут[уы]?|час(?:а|ов)?|дн(?:я|ей|ь)?)"), "")
+            .replace(Regex("через\\s+(минуту|час|день)"), "")
+            .replace(Regex("\\s+"), " ")
             .trim()
-            .ifBlank { "Откройте Личный ИИ-Радар" }
+            .removePrefix("нужно ")
+            .removePrefix("надо ")
+            .removePrefix("сделать ")
+            .trim()
     }
 }
 
