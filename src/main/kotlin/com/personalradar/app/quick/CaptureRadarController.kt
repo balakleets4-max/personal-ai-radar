@@ -7,32 +7,51 @@ class CaptureRadarController(
     private val database: AppDatabase,
     private val repository: QuickCaptureRepository
 ) {
-    suspend fun loadRadarCards(): List<RadarCardEntity> {
-        return database.radarCardDao().getActiveCardsSnapshot()
+    suspend fun loadRadarCards(showHidden: Boolean = false): List<RadarCardEntity> {
+        return if (showHidden) {
+            database.radarCardDao().getHiddenCardsSnapshot()
+        } else {
+            database.radarCardDao().getActiveCardsSnapshot()
+        }
+    }
+
+    suspend fun saveCaptureAndLoadRadar(text: String, showHidden: Boolean): CaptureRadarScreenState {
+        val result = repository.addCapture(text)
+        return CaptureRadarScreenState(
+            message = "Захват #${result.captureId} сохранён. Карточка Радара #${result.cardId} создана.",
+            cards = loadRadarCards(showHidden)
+        )
     }
 
     suspend fun saveCaptureAndLoadRadar(text: String): CaptureRadarScreenState {
-        val result = repository.addCapture(text)
-        val cards = loadRadarCards()
+        return saveCaptureAndLoadRadar(text, showHidden = false)
+    }
+
+    suspend fun markCardDoneAndLoadRadar(cardId: Long, showHidden: Boolean): CaptureRadarScreenState {
+        database.radarCardDao().markDone(cardId, System.currentTimeMillis())
         return CaptureRadarScreenState(
-            message = "Захват #${result.captureId} сохранён. Карточка Радара #${result.cardId} создана.",
-            cards = cards
+            message = "Карточка #$cardId отмечена как готовая.",
+            cards = loadRadarCards(showHidden)
         )
     }
 
     suspend fun markCardDoneAndLoadRadar(cardId: Long): CaptureRadarScreenState {
-        database.radarCardDao().markDone(cardId, System.currentTimeMillis())
-        return CaptureRadarScreenState(
-            message = "Карточка #$cardId отмечена как готовая.",
-            cards = loadRadarCards()
-        )
+        return markCardDoneAndLoadRadar(cardId, showHidden = false)
     }
 
     suspend fun hideCardAndLoadRadar(cardId: Long): CaptureRadarScreenState {
         database.radarCardDao().hideCard(cardId, System.currentTimeMillis())
         return CaptureRadarScreenState(
-            message = "Карточка #$cardId скрыта.",
-            cards = loadRadarCards()
+            message = "Карточка #$cardId скрыта. Её можно вернуть из раздела скрытых.",
+            cards = loadRadarCards(showHidden = false)
+        )
+    }
+
+    suspend fun restoreHiddenCardAndLoadRadar(cardId: Long, showHidden: Boolean): CaptureRadarScreenState {
+        database.radarCardDao().restoreHiddenCard(cardId, System.currentTimeMillis())
+        return CaptureRadarScreenState(
+            message = "Карточка #$cardId возвращена в Радар.",
+            cards = loadRadarCards(showHidden)
         )
     }
 }
