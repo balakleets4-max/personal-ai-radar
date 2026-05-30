@@ -64,7 +64,8 @@ class CaptureRadarController(
         return CaptureRadarScreenState(
             message = "Карточка #$cardId отмечена как готовая.",
             cards = snapshot.cards,
-            counters = snapshot.counters
+            counters = snapshot.counters,
+            cancelledReminderCardId = cardId
         )
     }
 
@@ -85,28 +86,33 @@ class CaptureRadarController(
         return CaptureRadarScreenState(
             message = "Карточка #$cardId скрыта. Её можно вернуть из раздела скрытых.",
             cards = snapshot.cards,
-            counters = snapshot.counters
+            counters = snapshot.counters,
+            cancelledReminderCardId = cardId
         )
     }
 
     suspend fun restoreHiddenCardAndLoadRadar(cardId: Long, showHidden: Boolean): CaptureRadarScreenState {
         database.radarCardDao().restoreCardToActive(cardId, System.currentTimeMillis())
+        val restoredCard = database.radarCardDao().getCardById(cardId)
         val mode = if (showHidden) RadarCardViewMode.HIDDEN else RadarCardViewMode.ACTIVE
         val snapshot = loadRadarSnapshot(mode)
         return CaptureRadarScreenState(
             message = "Карточка #$cardId возвращена в Радар.",
             cards = snapshot.cards,
-            counters = snapshot.counters
+            counters = snapshot.counters,
+            restoredCard = restoredCard
         )
     }
 
     suspend fun restoreCardToActiveAndLoadRadar(cardId: Long, mode: RadarCardViewMode): CaptureRadarScreenState {
         database.radarCardDao().restoreCardToActive(cardId, System.currentTimeMillis())
+        val restoredCard = database.radarCardDao().getCardById(cardId)
         val snapshot = loadRadarSnapshot(mode)
         return CaptureRadarScreenState(
             message = "Карточка #$cardId возвращена в Радар.",
             cards = snapshot.cards,
-            counters = snapshot.counters
+            counters = snapshot.counters,
+            restoredCard = restoredCard
         )
     }
 
@@ -117,7 +123,8 @@ class CaptureRadarController(
             message = "Карточка #$cardId удалена.",
             cards = snapshot.cards,
             counters = snapshot.counters,
-            deletedCardId = cardId
+            deletedCardId = cardId,
+            cancelledReminderCardId = cardId
         )
     }
 }
@@ -144,5 +151,7 @@ data class CaptureRadarScreenState(
     val cards: List<RadarCardEntity>,
     val counters: RadarCounters,
     val createdCard: RadarCardEntity? = null,
-    val deletedCardId: Long? = null
+    val restoredCard: RadarCardEntity? = null,
+    val deletedCardId: Long? = null,
+    val cancelledReminderCardId: Long? = null
 )
