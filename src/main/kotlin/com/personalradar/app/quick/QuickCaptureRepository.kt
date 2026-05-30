@@ -1,5 +1,8 @@
 package com.personalradar.app.quick
 
+import com.personalradar.app.ai.AiAnalysisResult
+import com.personalradar.app.ai.AiSettingsStore
+import com.personalradar.app.ai.YandexAiClient
 import com.personalradar.app.core.database.AppDatabase
 import com.personalradar.app.core.database.entity.AnalysisResultEntity
 import com.personalradar.app.core.database.entity.CaptureEntity
@@ -8,7 +11,9 @@ import java.util.Calendar
 import java.util.Locale
 
 class QuickCaptureRepository(
-    private val database: AppDatabase
+    private val database: AppDatabase,
+    private val aiSettingsStore: AiSettingsStore? = null,
+    private val yandexAiClient: YandexAiClient? = null
 ) {
     suspend fun addCapture(rawText: String): QuickCaptureResult {
         val cleanText = rawText.trim()
@@ -16,22 +21,33 @@ class QuickCaptureRepository(
 
         val now = System.currentTimeMillis()
         val language = detectLanguage(cleanText)
-        val dateSignal = parseDateSignal(cleanText, now)
-        val actionText = extractActionText(cleanText)
-        val mainIntent = detectIntent(cleanText, dateSignal)
+        val localDateSignal = parseDateSignal(cleanText, now)
+        val cloudResult = tryCloudAnalysis(cleanText)
+        val cloudDateSignal = cloudResult?.dueText?.takeIf { it.isNotBlank() }?.let { parseDateSignal(it, now) }
+        val dateSignal = cloudDateSignal ?: localDateSignal
+        val actionText = cloudResult?.action?.takeIf { it.isNotBlank() } ?: extractActionText(cleanText)
+        val mainIntent = normalizeIntent(cloudResult?.type) ?: detectIntent(cleanText, dateSignal)
         val summary = actionText.ifBlank { cleanText }.take(120)
         val hasAction = hasActionSignal(cleanText) || actionText.isNotBlank()
-        val hasRisk = hasRiskSignal(cleanText)
-        val hasReminder = hasReminderSignal(cleanText) || dateSignal != null
+        val hasRisk = hasRiskSignal(cleanText) || mainIntent == "RISK"
+        val hasReminder = hasReminderSignal(cleanText) || dateSignal != null || mainIntent == "REMINDER"
         val cardTitle = buildCardTitle(summary, mainIntent)
-        val whyText = buildWhyText(language, mainIntent, hasAction, hasRisk, hasReminder, dateSignal)
+        val whyText = buildWhyText(
+            language = language,
+            intent = mainIntent,
+            hasAction = hasAction,
+            hasRisk = hasRisk,
+            hasReminder = hasReminder,
+            dateSignal = dateSignal,
+            cloudResult = cloudResult
+        )
 
         val captureId = database.captureDao().insertCapture(
             CaptureEntity(
                 rawText = cleanText,
                 createdAt = now,
                 updatedAt = now,
-                source = "manual_or_shared_text",
+                source = if (cloudResult != null) "manual_or_shared_text_cloud_ai" else "manual_or_shared_text",
                 language = language,
                 status = "ACTIVE"
             )
@@ -41,13 +57,13 @@ class QuickCaptureRepository(
             AnalysisResultEntity(
                 captureId = captureId,
                 analyzedAt = now,
-                parserVersion = "context-parser-v0.5",
-                analyzerVersion = "context-analyzer-v0.5",
+                parserVersion = if (cloudResult != null) "yandex-ai-context-v0.1" else "context-parser-v0.5",
+                analyzerVersion = if (cloudResult != null) "cloud-ai-analyzer-v0.1" else "context-analyzer-v0.5",
                 isLatest = true,
                 language = language,
                 mainIntent = mainIntent,
                 secondaryIntent = null,
-                confidence = if (dateSignal != null) 0.78f else 0.64f,
+                confidence = if (cloudResult != null) 0.84f else if (dateSignal != null) 0.78f else 0.64f,
                 summary = summary,
                 detectedDateText = dateSignal?.dateText,
                 detectedTimeText = dateSignal?.timeText,
@@ -64,18 +80,18 @@ class QuickCaptureRepository(
             RadarCardEntity(
                 captureId = captureId,
                 analysisId = analysisId,
-                radarEngineVersion = "quick-radar-v0.5",
+                radarEngineVersion = if (cloudResult != null) "ai-radar-v0.1" else "quick-radar-v0.5",
                 type = mainIntent,
                 title = cardTitle,
-                description = summary,
+                description = cloudResult?.notification?.takeIf { it.isNotBlank() } ?: summary,
                 whyText = whyText,
                 sourceQuote = cleanText.take(180),
-                priority = when {
+                priority = cloudResult?.importance ?: when {
                     hasRisk -> 5
                     hasReminder || hasAction -> 4
                     else -> 3
                 },
-                confidence = if (dateSignal != null) 0.78f else 0.64f,
+                confidence = if (cloudResult != null) 0.84f else if (dateSignal != null) 0.78f else 0.64f,
                 status = "ACTIVE",
                 dueAt = dateSignal?.timestampMillis,
                 createdAt = now,
@@ -86,6 +102,12 @@ class QuickCaptureRepository(
         )
 
         return QuickCaptureResult(captureId, analysisId, cardId, cardTitle, whyText)
+    }
+
+    private fun tryCloudAnalysis(text: String): AiAnalysisResult? {
+        val settings = aiSettingsStore?.getSettings() ?: return null
+        if (!settings.canUseCloud) return null
+        return yandexAiClient?.analyzeText(text, settings)
     }
 
     private fun detectLanguage(text: String): String {
@@ -106,6 +128,16 @@ class QuickCaptureRepository(
             hasReminderSignal(lower) || dateSignal != null -> "REMINDER"
             hasActionSignal(lower) -> "TASK"
             else -> "THOUGHT"
+        }
+    }
+
+    private fun normalizeIntent(type: String?): String? {
+        return when (type?.lowercase()?.trim()) {
+            "reminder" -> "REMINDER"
+            "task" -> "TASK"
+            "risk" -> "RISK"
+            "thought" -> "THOUGHT"
+            else -> null
         }
     }
 
@@ -147,15 +179,18 @@ class QuickCaptureRepository(
         hasAction: Boolean,
         hasRisk: Boolean,
         hasReminder: Boolean,
-        dateSignal: DateSignal?
+        dateSignal: DateSignal?,
+        cloudResult: AiAnalysisResult?
     ): String {
         val signals = mutableListOf<String>()
         signals.add("язык: $language")
         signals.add("тип: ${humanIntent(intent)}")
+        if (cloudResult != null) signals.add("усилено Yandex AI")
         if (hasAction) signals.add("действие найдено")
         if (hasRisk) signals.add("есть сигнал риска")
         if (hasReminder) signals.add("есть сигнал времени/напоминания")
         if (dateSignal != null) signals.add("когда: ${dateSignal.label}")
+        if (cloudResult?.reason?.isNotBlank() == true) signals.add("ИИ: ${cloudResult.reason.take(90)}")
         return signals.joinToString("; ")
     }
 
