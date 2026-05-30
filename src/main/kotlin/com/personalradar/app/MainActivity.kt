@@ -2,12 +2,17 @@ package com.personalradar.app
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlarmManager
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
@@ -45,6 +50,7 @@ class MainActivity : Activity() {
         controller = AppContainer.get(applicationContext).captureRadarController
         setContentView(buildScreen())
         requestNotificationPermissionIfNeeded()
+        requestExactAlarmPermissionIfNeeded()
         refreshRadarCards()
     }
 
@@ -132,6 +138,26 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun requestExactAlarmPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            if (!alarmManager.canScheduleExactAlarms()) {
+                status.text = "Для точных напоминаний разрешите будильники и напоминания для приложения."
+                try {
+                    startActivity(
+                        Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                            data = Uri.parse("package:$packageName")
+                        }
+                    )
+                } catch (_: Throwable) {
+                    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.parse("package:$packageName")
+                    })
+                }
+            }
+        }
+    }
+
     private fun saveCapture() {
         val text = input.text.toString()
         CoroutineScope(Dispatchers.IO).launch {
@@ -156,7 +182,10 @@ class MainActivity : Activity() {
         if (card.dueAt == null) return
         val result = AppContainer.get(applicationContext).reminderScheduler.schedule(card)
         status.text = when (result) {
-            is ReminderScheduleResult.Scheduled -> "${state.message}\nУведомление запланировано: ${formatDueAt(result.dueAt)}"
+            is ReminderScheduleResult.Scheduled -> {
+                val mode = if (result.exact) "точное" else "примерное"
+                "${state.message}\nУведомление запланировано ($mode): ${formatDueAt(result.dueAt)}"
+            }
             is ReminderScheduleResult.NotScheduled -> "${state.message}\nУведомление не запланировано: ${result.reason}"
         }
     }
@@ -185,6 +214,23 @@ class MainActivity : Activity() {
             } catch (t: Throwable) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@MainActivity, t.message ?: "Не удалось вернуть карточку", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun deleteCard(cardId: Long) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val state = controller.deleteCardAndLoadRadar(cardId, viewMode)
+                withContext(Dispatchers.Main) {
+                    AppContainer.get(applicationContext).reminderScheduler.cancel(cardId)
+                    renderState(state)
+                    status.text = "${state.message}\nЗапланированное уведомление отменено."
+                }
+            } catch (t: Throwable) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, t.message ?: "Не удалось удалить карточку", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -361,6 +407,10 @@ class MainActivity : Activity() {
                     })
                 }
             }
+            buttons.addView(Button(this).apply {
+                text = "Удалить"
+                setOnClickListener { deleteCard(card.id) }
+            })
             box.addView(buttons)
             radarList.addView(
                 box,
