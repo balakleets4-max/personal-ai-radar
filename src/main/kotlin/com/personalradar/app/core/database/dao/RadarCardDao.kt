@@ -117,6 +117,9 @@ interface RadarCardDao {
     @Query("UPDATE radar_cards SET status = 'ACTIVE', hiddenAt = NULL, completedAt = NULL, updatedAt = :now WHERE id = :cardId")
     suspend fun restoreHiddenCard(cardId: Long, now: Long)
 
+    @Query("DELETE FROM radar_cards WHERE id = :cardId")
+    suspend fun deleteCard(cardId: Long)
+
     @Query("UPDATE radar_cards SET status = 'SNOOZED', snoozedUntil = :until, updatedAt = :now WHERE id = :cardId")
     suspend fun snoozeCard(cardId: Long, until: Long, now: Long)
 
