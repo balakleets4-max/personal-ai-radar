@@ -232,6 +232,23 @@ class MainActivity : Activity() {
             .replace("; ", " · ")
     }
 
+    private fun normalizeCardText(text: String): String {
+        return text
+            .lowercase()
+            .replace("задача:", "")
+            .replace("напоминание:", "")
+            .replace("риск:", "")
+            .replace("мысль:", "")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
+    private fun shouldShowDescription(card: RadarCardEntity): Boolean {
+        val title = normalizeCardText(card.title)
+        val description = normalizeCardText(card.description)
+        return description.isNotBlank() && description != title && !title.contains(description) && !description.contains(title)
+    }
+
     private fun renderCards(cards: List<RadarCardEntity>) {
         radarList.removeAllViews()
         if (cards.isEmpty()) {
@@ -260,14 +277,16 @@ class MainActivity : Activity() {
                 text = card.title
                 textSize = 19f
                 typeface = Typeface.DEFAULT_BOLD
-                setPadding(0, 0, 0, 6)
+                setPadding(0, 0, 0, if (shouldShowDescription(card)) 6 else 8)
             })
-            box.addView(TextView(this).apply {
-                text = card.description
-                textSize = 15f
-                setTextColor(Color.rgb(45, 45, 52))
-                setPadding(0, 0, 0, 8)
-            })
+            if (shouldShowDescription(card)) {
+                box.addView(TextView(this).apply {
+                    text = card.description
+                    textSize = 15f
+                    setTextColor(Color.rgb(45, 45, 52))
+                    setPadding(0, 0, 0, 8)
+                })
+            }
             box.addView(TextView(this).apply {
                 text = compactWhy(card.whyText)
                 textSize = 13f
