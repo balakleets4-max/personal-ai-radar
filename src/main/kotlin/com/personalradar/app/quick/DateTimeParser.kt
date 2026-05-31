@@ -6,14 +6,58 @@ import java.util.Locale
 object DateTimeParser {
     fun parse(text: String, nowMillis: Long): DateSignal? {
         val lower = normalize(text)
+        parseAbsoluteDateTime(lower, nowMillis)?.let { return it }
         parseRelativeDuration(lower, nowMillis)?.let { return it }
         return null
     }
 
     fun removeRelativeDuration(text: String): String {
         return RELATIVE_PHRASE_REGEX.replace(normalize(text), " ")
+            .replace(ABSOLUTE_DATE_TIME_REGEX, " ")
             .replace(Regex("\\s+"), " ")
             .trim(' ', ',', '.', '-', '—', ':', ';')
+    }
+
+    private fun parseAbsoluteDateTime(text: String, nowMillis: Long): DateSignal? {
+        val match = ABSOLUTE_DATE_TIME_REGEX.find(text) ?: return null
+        val day = match.groupValues[1].toIntOrNull() ?: return null
+        val month = match.groupValues[2].toIntOrNull() ?: return null
+        val rawYear = match.groupValues.getOrNull(3).orEmpty()
+        val hour = match.groupValues.getOrNull(4).orEmpty().toIntOrNull() ?: 9
+        val minute = match.groupValues.getOrNull(5).orEmpty().toIntOrNull() ?: 0
+
+        if (day !in 1..31 || month !in 1..12 || hour !in 0..23 || minute !in 0..59) return null
+
+        val now = Calendar.getInstance().apply { timeInMillis = nowMillis }
+        val year = when {
+            rawYear.isBlank() -> now.get(Calendar.YEAR)
+            rawYear.length == 2 -> 2000 + rawYear.toInt()
+            else -> rawYear.toIntOrNull() ?: now.get(Calendar.YEAR)
+        }
+
+        val calendar = Calendar.getInstance().apply {
+            clear()
+            set(Calendar.YEAR, year)
+            set(Calendar.MONTH, month - 1)
+            set(Calendar.DAY_OF_MONTH, day)
+            set(Calendar.HOUR_OF_DAY, hour)
+            set(Calendar.MINUTE, minute)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+
+        if (rawYear.isBlank() && calendar.timeInMillis < nowMillis - ONE_DAY_MILLIS) {
+            calendar.add(Calendar.YEAR, 1)
+        }
+
+        val dateText = "%02d.%02d".format(day, month)
+        val timeText = "%02d:%02d".format(hour, minute)
+        return DateSignal(
+            label = "$dateText $timeText",
+            dateText = dateText,
+            timeText = timeText,
+            timestampMillis = calendar.timeInMillis
+        )
     }
 
     private fun parseRelativeDuration(text: String, nowMillis: Long): DateSignal? {
@@ -175,6 +219,8 @@ object DateTimeParser {
         YEAR
     }
 
+    private const val ONE_DAY_MILLIS = 24L * 60L * 60L * 1000L
+
     private val WORD_NUMBERS = mapOf(
         "ноль" to 0,
         "один" to 1,
@@ -223,6 +269,10 @@ object DateTimeParser {
     private val DURATION_PART_PATTERN = "(?:(?:$NUMBER_PATTERN)(?:\\s+$NUMBER_PATTERN)*\\s+)?$UNIT_PATTERN"
     private val RELATIVE_PHRASE_REGEX = Regex(
         "через\\s+$DURATION_PART_PATTERN(?:\\s*(?:и|,)?\\s*$DURATION_PART_PATTERN)*",
+        RegexOption.IGNORE_CASE
+    )
+    private val ABSOLUTE_DATE_TIME_REGEX = Regex(
+        "\\b(\\d{1,2})[./](\\d{1,2})(?:[./](\\d{2,4}))?(?:\\s*(?:в|,)?\\s*(\\d{1,2})[:.](\\d{2}))?\\b",
         RegexOption.IGNORE_CASE
     )
 }
