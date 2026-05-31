@@ -144,6 +144,15 @@ interface RadarCardDao {
     @Query("""
         SELECT * FROM radar_cards
         WHERE dedupeKey = :dedupeKey
+        AND status IN ('ACTIVE', 'SNOOZED', 'HIDDEN', 'DONE')
+        ORDER BY createdAt DESC
+        LIMIT 1
+    """)
+    suspend fun findNonArchivedCardByDedupeKey(dedupeKey: String): RadarCardEntity?
+
+    @Query("""
+        SELECT * FROM radar_cards
+        WHERE dedupeKey = :dedupeKey
         ORDER BY createdAt DESC
         LIMIT 1
     """)
