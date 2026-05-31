@@ -49,7 +49,7 @@ class CalendarImportActivity : Activity() {
             setPadding(20, 20, 20, 12)
         }
         preview = TextView(this).apply {
-            text = "Радар прочитает ближайшие события календаря только после разрешения."
+            text = "Радар прочитает события календаря на 14 дней: первая неделя — усиленный контроль, вторая — пассивный."
             textSize = 15f
             setPadding(20, 12, 20, 16)
         }
@@ -84,13 +84,13 @@ class CalendarImportActivity : Activity() {
             return
         }
 
-        status.text = "Читаю события календаря на ближайшие 7 дней..."
-        preview.text = ""
+        status.text = "Читаю события календаря на ближайшие 14 дней..."
+        preview.text = "1–7 дней: усиленный контроль. 8–14 дней: пассивный контроль."
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val reader = CalendarSourceReader(applicationContext)
-                val events = reader.readUpcomingEvents(daysAhead = 7, limit = 20)
+                val events = reader.readUpcomingEvents(daysAhead = 14, limit = 60)
                 val repository = AppContainer.get(applicationContext).quickCaptureRepository
                 var created = 0
 
@@ -102,10 +102,12 @@ class CalendarImportActivity : Activity() {
                 withContext(Dispatchers.Main) {
                     if (events.isEmpty()) {
                         status.text = "Ближайших событий календаря не найдено."
-                        preview.text = "Создайте тестовое событие в календаре и повторите сканирование."
+                        preview.text = "Создайте тестовое мероприятие в календаре и повторите сканирование. Важно: Google Tasks/Задачи — отдельный источник, они пока не читаются этим календарным модулем."
                     } else {
-                        status.text = "Календарь просканирован. Создано карточек: $created."
-                        preview.text = events.take(8).joinToString("\n\n") { event ->
+                        val strongCount = events.count { it.controlMode == CalendarControlMode.STRONG }
+                        val passiveCount = events.count { it.controlMode == CalendarControlMode.PASSIVE }
+                        status.text = "Календарь просканирован. Создано карточек: $created. Усиленный контроль: $strongCount. Пассивный контроль: $passiveCount."
+                        preview.text = events.take(12).joinToString("\n\n") { event ->
                             "• ${event.title}\n  ${event.calendarName}\n  ${event.toRadarCaptureText()}"
                         }
                     }
