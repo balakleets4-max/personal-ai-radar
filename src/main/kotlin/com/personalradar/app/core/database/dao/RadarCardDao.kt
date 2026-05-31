@@ -141,6 +141,14 @@ interface RadarCardDao {
     """)
     suspend fun findActiveCardByDedupeKey(dedupeKey: String): RadarCardEntity?
 
+    @Query("""
+        SELECT * FROM radar_cards
+        WHERE dedupeKey = :dedupeKey
+        ORDER BY createdAt DESC
+        LIMIT 1
+    """)
+    suspend fun findLatestCardByDedupeKey(dedupeKey: String): RadarCardEntity?
+
     @Query("UPDATE radar_cards SET duplicateHitCount = duplicateHitCount + 1, updatedAt = :now WHERE id = :cardId")
     suspend fun bumpDuplicateHitCount(cardId: Long, now: Long)
 
