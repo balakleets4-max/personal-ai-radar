@@ -1,9 +1,12 @@
 package com.personalradar.app.quick
 
+import android.content.Context
+import com.personalradar.app.calendar.CalendarBackgroundScheduler
 import com.personalradar.app.core.database.AppDatabase
 import com.personalradar.app.core.database.entity.RadarCardEntity
 
 class CaptureRadarController(
+    private val context: Context,
     private val database: AppDatabase,
     private val repository: QuickCaptureRepository
 ) {
@@ -119,6 +122,9 @@ class CaptureRadarController(
     suspend fun deleteCardAndLoadRadar(cardId: Long, mode: RadarCardViewMode): CaptureRadarScreenState {
         val deletedCard = database.radarCardDao().getCardById(cardId)
         database.radarCardDao().archiveCard(cardId, System.currentTimeMillis())
+        if (deletedCard?.type == "CALENDAR") {
+            CalendarBackgroundScheduler(context).runOnceSoon()
+        }
         val snapshot = loadRadarSnapshot(mode)
         return CaptureRadarScreenState(
             message = "Карточка #$cardId убрана.",
