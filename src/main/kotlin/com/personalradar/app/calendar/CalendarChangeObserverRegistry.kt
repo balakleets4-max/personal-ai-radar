@@ -41,8 +41,8 @@ private class CalendarChangeObserver(
 ) : ContentObserver(Handler(Looper.getMainLooper())) {
     private val appContext = context.applicationContext
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val scheduleQuickCheck = Runnable {
-        CalendarBackgroundScheduler(appContext).runOnceSoon()
+    private val scheduleFollowUpChecks = Runnable {
+        CalendarBackgroundScheduler(appContext).runChangeFollowUpChecks()
     }
 
     override fun onChange(selfChange: Boolean) {
@@ -50,8 +50,8 @@ private class CalendarChangeObserver(
     }
 
     override fun onChange(selfChange: Boolean, uri: Uri?) {
-        mainHandler.removeCallbacks(scheduleQuickCheck)
-        mainHandler.postDelayed(scheduleQuickCheck, DEBOUNCE_DELAY_MS)
+        mainHandler.removeCallbacks(scheduleFollowUpChecks)
+        mainHandler.postDelayed(scheduleFollowUpChecks, DEBOUNCE_DELAY_MS)
     }
 
     companion object {
