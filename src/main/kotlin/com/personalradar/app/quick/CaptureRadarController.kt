@@ -40,7 +40,7 @@ class CaptureRadarController(
         val snapshot = loadRadarSnapshot(mode)
         val createdCard = database.radarCardDao().getCardById(result.cardId)
         return CaptureRadarScreenState(
-            message = "Захват #${result.captureId} сохранён. Карточка Радара #${result.cardId} создана.",
+            message = "Захват #${result.captureId} сохранён. Карточка #${result.cardId} создана.",
             cards = snapshot.cards,
             counters = snapshot.counters,
             createdCard = createdCard
@@ -97,7 +97,7 @@ class CaptureRadarController(
         val mode = if (showHidden) RadarCardViewMode.HIDDEN else RadarCardViewMode.ACTIVE
         val snapshot = loadRadarSnapshot(mode)
         return CaptureRadarScreenState(
-            message = "Карточка #$cardId возвращена в Радар.",
+            message = "Карточка #$cardId возвращена.",
             cards = snapshot.cards,
             counters = snapshot.counters,
             restoredCard = restoredCard
@@ -109,7 +109,7 @@ class CaptureRadarController(
         val restoredCard = database.radarCardDao().getCardById(cardId)
         val snapshot = loadRadarSnapshot(mode)
         return CaptureRadarScreenState(
-            message = "Карточка #$cardId возвращена в Радар.",
+            message = "Карточка #$cardId возвращена.",
             cards = snapshot.cards,
             counters = snapshot.counters,
             restoredCard = restoredCard
@@ -117,10 +117,10 @@ class CaptureRadarController(
     }
 
     suspend fun deleteCardAndLoadRadar(cardId: Long, mode: RadarCardViewMode): CaptureRadarScreenState {
-        database.radarCardDao().deleteCard(cardId)
+        database.radarCardDao().archiveCard(cardId, System.currentTimeMillis())
         val snapshot = loadRadarSnapshot(mode)
         return CaptureRadarScreenState(
-            message = "Карточка #$cardId удалена.",
+            message = "Карточка #$cardId убрана.",
             cards = snapshot.cards,
             counters = snapshot.counters,
             deletedCardId = cardId,
