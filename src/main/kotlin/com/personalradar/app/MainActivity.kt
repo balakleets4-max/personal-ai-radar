@@ -108,11 +108,11 @@ class MainActivity : Activity() {
             setPadding(0, 12, 0, 18)
         }
         val saveButton = Button(this).apply {
-            text = "Сохранить захват"
+            text = "Сохранить"
             setOnClickListener { saveCapture() }
         }
         val voiceButton = Button(this).apply {
-            text = "🎙 Сказать в Радар"
+            text = "🎙 Сказать"
             setOnClickListener { startVoiceCapture() }
         }
         val calendarButton = Button(this).apply {
@@ -147,19 +147,7 @@ class MainActivity : Activity() {
         }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(22, 28, 22, 28)
-            addView(TextView(this@MainActivity).apply {
-                text = "Личный ИИ-Радар"
-                textSize = 26f
-                typeface = Typeface.DEFAULT_BOLD
-                setPadding(0, 0, 0, 8)
-            })
-            addView(TextView(this@MainActivity).apply {
-                text = "Тихий помощник: собирает важное из разрешённых источников и напоминает вовремя."
-                textSize = 15f
-                setTextColor(Color.rgb(80, 80, 88))
-                setPadding(0, 0, 0, 14)
-            })
+            setPadding(22, 22, 22, 28)
             addView(input, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(voiceButton, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(calendarButton, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -168,7 +156,7 @@ class MainActivity : Activity() {
             addView(buildSourcesSection(), ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(buildAiSettingsSection(), ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(TextView(this@MainActivity).apply {
-                text = "Радар"
+                text = "Активное"
                 textSize = 23f
                 typeface = Typeface.DEFAULT_BOLD
                 setPadding(0, 18, 0, 6)
@@ -185,21 +173,21 @@ class MainActivity : Activity() {
             background = softPanelBackground()
             setPadding(20, 18, 20, 18)
             addView(TextView(this@MainActivity).apply {
-                text = "Источники Радара"
+                text = "Источники"
                 textSize = 21f
                 typeface = Typeface.DEFAULT_BOLD
                 setPadding(0, 0, 0, 6)
             })
             addView(TextView(this@MainActivity).apply {
-                text = "Здесь видно, откуда помощник уже умеет принимать важные сигналы."
+                text = "Откуда приложение уже умеет принимать важные сигналы."
                 textSize = 14f
                 setTextColor(Color.rgb(80, 80, 88))
                 setPadding(0, 0, 0, 12)
             })
             addView(sourceRow("Ручной ввод", "включён", "Можно вручную добавить мысль, дело или напоминание."))
             addView(sourceRow("Голосовой захват", "улучшен", "Можно сказать мысль или напоминание голосом — аудио не сохраняется."))
-            addView(sourceRow("Поделиться в Радар", "включено", "Из другого приложения нажмите Поделиться и выберите Личный ИИ-Радар."))
-            addView(sourceRow("Уведомления Радара", "частично", "Приложение уже умеет отправлять собственные напоминания."))
+            addView(sourceRow("Поделиться", "включено", "Из другого приложения можно отправить текст через системную кнопку Поделиться."))
+            addView(sourceRow("Уведомления", "частично", "Приложение уже умеет отправлять собственные напоминания."))
             addView(sourceRow("Календарь", "бета", "Ручной импорт ближайших событий календаря с разрешения владельца."))
             addView(Button(this@MainActivity).apply {
                 text = "📅 Импортировать события календаря"
@@ -477,7 +465,7 @@ class MainActivity : Activity() {
     private fun switchMode(mode: RadarCardViewMode) {
         viewMode = mode
         status.text = when (mode) {
-            RadarCardViewMode.ACTIVE -> "Активный Радар."
+            RadarCardViewMode.ACTIVE -> "Активные карточки."
             RadarCardViewMode.HIDDEN -> "Скрытые карточки."
             RadarCardViewMode.DONE -> "Готовые карточки."
         }
