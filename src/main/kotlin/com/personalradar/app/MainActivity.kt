@@ -21,6 +21,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import com.personalradar.app.calendar.CalendarBackgroundScheduler
 import com.personalradar.app.core.database.entity.RadarCardEntity
 import com.personalradar.app.di.AppContainer
 import com.personalradar.app.quick.CaptureRadarController
@@ -52,12 +53,14 @@ class MainActivity : Activity() {
         setContentView(buildScreen())
         requestNotificationPermissionIfNeeded()
         requestExactAlarmPermissionIfNeeded()
+        scheduleCalendarBackgroundChecks()
         refreshRadarCards()
         handleIncomingShare(intent)
     }
 
     override fun onResume() {
         super.onResume()
+        scheduleCalendarBackgroundChecks()
         if (::radarList.isInitialized) refreshRadarCards()
     }
 
@@ -183,7 +186,7 @@ class MainActivity : Activity() {
             addView(sourceRow("Голосовой захват", "включён", "Сказанная фраза превращается в карточку. Аудио не сохраняется."))
             addView(sourceRow("Поделиться", "включено", "Можно отправить текст из другого приложения."))
             addView(sourceRow("Уведомления", "включены", "Напоминания приходят через системные уведомления."))
-            addView(sourceRow("Календарь", "бета", "Сейчас доступна ручная проверка. Следующий шаг — фоновая проверка без открытия приложения."))
+            addView(sourceRow("Календарь", "бета", "Работает фоновая проверка после выдачи разрешения. Ручная проверка ниже нужна только для теста."))
             addView(Button(this@MainActivity).apply {
                 text = "Проверить календарь сейчас"
                 setOnClickListener { startCalendarImport() }
@@ -365,6 +368,10 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun scheduleCalendarBackgroundChecks() {
+        CalendarBackgroundScheduler(applicationContext).ensureScheduled()
+    }
+
     private fun startVoiceCapture() {
         status.text = "Открываю офлайн-голос. Говорите спокойно, завершите кнопкой Готово."
         startActivityForResult(
@@ -375,6 +382,7 @@ class MainActivity : Activity() {
 
     private fun startCalendarImport() {
         status.text = "Проверяю календарь."
+        CalendarBackgroundScheduler(applicationContext).runOnceSoon()
         startActivity(Intent(this, com.personalradar.app.calendar.CalendarImportActivity::class.java))
     }
 
