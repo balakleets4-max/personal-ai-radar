@@ -24,12 +24,7 @@
         <activity
             android:name=".calendar.CalendarImportActivity"
             android:label="Календарь Радара"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+            android:exported="false" />
 
         <activity
             android:name=".MainActivity"
