@@ -152,6 +152,16 @@ interface RadarCardDao {
 
     @Query("""
         SELECT * FROM radar_cards
+        WHERE type = 'CALENDAR'
+        AND status IN ('ACTIVE', 'SNOOZED')
+        AND dueAt IS NOT NULL
+        AND dueAt BETWEEN :fromMillis AND :toMillis
+        ORDER BY dueAt ASC, createdAt DESC
+    """)
+    suspend fun getVisibleCalendarCardsInWindow(fromMillis: Long, toMillis: Long): List<RadarCardEntity>
+
+    @Query("""
+        SELECT * FROM radar_cards
         WHERE dedupeKey = :dedupeKey
         ORDER BY createdAt DESC
         LIMIT 1
@@ -166,6 +176,9 @@ interface RadarCardDao {
 
     @Query("UPDATE radar_cards SET status = 'ARCHIVED', updatedAt = :now WHERE id = :cardId")
     suspend fun archiveCard(cardId: Long, now: Long)
+
+    @Query("UPDATE radar_cards SET status = 'ARCHIVED', updatedAt = :now WHERE id IN (:cardIds)")
+    suspend fun archiveCards(cardIds: List<Long>, now: Long)
 
     @Query("SELECT COUNT(*) FROM radar_cards WHERE createdAt BETWEEN :from AND :to")
     suspend fun countCardsCreatedBetween(from: Long, to: Long): Int
