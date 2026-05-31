@@ -11,19 +11,10 @@ object OfflineTextPolisher {
             .trim()
 
         text = DateTimeParser.removeRelativeDuration(text)
+        text = removeCalendarWords(text)
+        text = removeGenericReminderOutcome(text)
 
-        val afterPurposeMarker = extractAfterLastMarker(
-            text,
-            listOf(
-                "о том что",
-                "о том, что",
-                "чтобы",
-                "что мне надо",
-                "что мне нужно",
-                "что надо",
-                "что нужно"
-            )
-        )
+        val afterPurposeMarker = extractAfterLastUsefulMarker(text)
         if (afterPurposeMarker.isNotBlank()) text = afterPurposeMarker
 
         text = removeNoise(text)
@@ -31,7 +22,7 @@ object OfflineTextPolisher {
         text = cleanup(text)
 
         if (text.isBlank()) {
-            text = fallbackFromOriginal(rawText)
+            text = fallbackFromOriginal(rawText, dateSignal)
         }
 
         return text.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
@@ -49,6 +40,25 @@ object OfflineTextPolisher {
         }
     }
 
+    private fun removeCalendarWords(text: String): String {
+        return text
+            .replace(Regex("(?i)\\b(сегодня|завтра|послезавтра)\\b"), " ")
+            .replace(Regex("(?i)\\b(утром|днем|днём|вечером)\\b"), " ")
+            .replace(Regex("(?i)(?:\\bв\\s*)?\\d{1,2}[:.]\\d{2}\\b"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
+    private fun removeGenericReminderOutcome(text: String): String {
+        return text
+            .replace(Regex("(?i)\\bчтобы\\s+оно\\s+(?:сработало|сработает|сыграло|сыграет)\\b"), " ")
+            .replace(Regex("(?i)\\bчтоб\\s+оно\\s+(?:сработало|сработает|сыграло|сыграет)\\b"), " ")
+            .replace(Regex("(?i)\\bоно\\s+(?:сработало|сработает|сыграло|сыграет)\\b"), " ")
+            .replace(Regex("(?i)\\b(?:должно|должен|должна)\\s+(?:сработать|сыграть)\\b"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
     private fun removeNoise(text: String): String {
         var result = text
         val patterns = listOf(
@@ -58,12 +68,20 @@ object OfflineTextPolisher {
             "поставь напоминание",
             "создать напоминание",
             "сделай напоминание",
+            "пусть сыграет напоминание",
+            "пусть сработает напоминание",
+            "пускай сыграет напоминание",
+            "пускай сработает напоминание",
             "должен сработать напоминание",
             "должно сработать напоминание",
             "сработать напоминание",
+            "сработает напоминание",
+            "сыграет напоминание",
             "напоминание должно сработать",
+            "напоминание должно сработает",
             "напоминание о том что",
             "напоминание о том, что",
+            "напоминание что",
             "напомни мне",
             "напомнить мне",
             "напомни",
@@ -75,7 +93,7 @@ object OfflineTextPolisher {
             "в общем",
             "как бы"
         )
-        patterns.forEach { phrase ->
+        patterns.sortedByDescending { it.length }.forEach { phrase ->
             result = result.replace(Regex("(?i)(^|\\s)" + Regex.escape(phrase) + "(\\s|$)"), " ")
         }
         return result
@@ -100,7 +118,15 @@ object OfflineTextPolisher {
             .trim()
     }
 
-    private fun extractAfterLastMarker(text: String, markers: List<String>): String {
+    private fun extractAfterLastUsefulMarker(text: String): String {
+        val markers = listOf(
+            "о том что",
+            "о том, что",
+            "что мне надо",
+            "что мне нужно",
+            "что надо",
+            "что нужно"
+        )
         var bestIndex = -1
         var bestMarker = ""
         markers.forEach { marker ->
@@ -110,15 +136,20 @@ object OfflineTextPolisher {
                 bestMarker = marker
             }
         }
-        return if (bestIndex >= 0) {
-            text.substring(bestIndex + bestMarker.length).trim()
-        } else {
-            ""
-        }
+        if (bestIndex < 0) return ""
+        return cleanup(text.substring(bestIndex + bestMarker.length))
     }
 
-    private fun fallbackFromOriginal(rawText: String): String {
-        return cleanup(DateTimeParser.removeRelativeDuration(rawText))
+    private fun fallbackFromOriginal(rawText: String, dateSignal: DateSignal?): String {
+        val clean = cleanup(
+            removeNoise(
+                removeGenericReminderOutcome(
+                    removeCalendarWords(DateTimeParser.removeRelativeDuration(rawText.lowercase(Locale.getDefault()).replace('ё', 'е')))
+                )
+            )
+        )
+        if (clean.isNotBlank()) return normalizeActionStart(clean)
+        return if (dateSignal != null) "проверить напоминание" else cleanup(rawText)
     }
 
     private fun ensureDot(text: String): String {
