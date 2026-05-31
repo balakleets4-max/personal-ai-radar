@@ -30,16 +30,46 @@ class CalendarBackgroundScheduler(
     }
 
     fun runOnceSoon() {
+        enqueueOneTimeCheck(
+            uniqueName = "calendar_background_check_once",
+            delaySeconds = 10,
+            policy = ExistingWorkPolicy.REPLACE
+        )
+    }
+
+    fun runChangeFollowUpChecks() {
+        enqueueOneTimeCheck(
+            uniqueName = "calendar_change_check_soon",
+            delaySeconds = 10,
+            policy = ExistingWorkPolicy.REPLACE
+        )
+        enqueueOneTimeCheck(
+            uniqueName = "calendar_change_check_settled",
+            delaySeconds = 45,
+            policy = ExistingWorkPolicy.REPLACE
+        )
+        enqueueOneTimeCheck(
+            uniqueName = "calendar_change_check_late",
+            delaySeconds = 120,
+            policy = ExistingWorkPolicy.REPLACE
+        )
+    }
+
+    private fun enqueueOneTimeCheck(
+        uniqueName: String,
+        delaySeconds: Long,
+        policy: ExistingWorkPolicy
+    ) {
         if (!hasCalendarPermission()) return
 
         val request = OneTimeWorkRequestBuilder<CalendarBackgroundWorker>()
-            .setInitialDelay(10, TimeUnit.SECONDS)
+            .setInitialDelay(delaySeconds, TimeUnit.SECONDS)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.MINUTES)
             .build()
 
         WorkManager.getInstance(context).enqueueUniqueWork(
-            "calendar_background_check_once",
-            ExistingWorkPolicy.REPLACE,
+            uniqueName,
+            policy,
             request
         )
     }
