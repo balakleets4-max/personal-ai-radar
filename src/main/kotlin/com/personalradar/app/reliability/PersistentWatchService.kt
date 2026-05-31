@@ -11,7 +11,6 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.personalradar.app.MainActivity
-import com.personalradar.app.R
 import com.personalradar.app.calendar.CalendarBackgroundScheduler
 import com.personalradar.app.calendar.CalendarChangeObserverRegistry
 
@@ -68,7 +67,7 @@ class PersistentWatchService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(android.R.drawable.ic_popup_reminder)
             .setContentTitle("AI Радар работает в фоне")
             .setContentText("Следит за разрешёнными источниками и готовит напоминания.")
             .setContentIntent(openIntent)
