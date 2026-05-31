@@ -186,13 +186,25 @@ class MainActivity : Activity() {
             addView(sourceRow("Голосовой захват", "включён", "Сказанная фраза превращается в карточку. Аудио не сохраняется."))
             addView(sourceRow("Поделиться", "включено", "Можно отправить текст из другого приложения."))
             addView(sourceRow("Уведомления", "включены", "Напоминания приходят через системные уведомления."))
-            addView(sourceRow("Календарь", "бета", "Работает фоновая проверка после выдачи разрешения. Ручная проверка ниже нужна только для теста."))
+            addView(sourceRow("Календарь", "бета", "Работает фоновая проверка после выдачи разрешения."))
+            addView(sourceRow("Уведомления телефона", "позже", "Будущий источник важных сообщений."))
+            addView(sourceRow("Контакты, ссылки, картинки", "позже", "Будут подключаться только с разрешения."))
+            addView(TextView(this@MainActivity).apply {
+                text = "Ручная проверка"
+                textSize = 16f
+                typeface = Typeface.DEFAULT_BOLD
+                setPadding(0, 14, 0, 4)
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = "Для теста и диагностики. Основная цель — фоновая работа."
+                textSize = 13f
+                setTextColor(Color.rgb(90, 90, 100))
+                setPadding(0, 0, 0, 6)
+            })
             addView(Button(this@MainActivity).apply {
                 text = "Проверить календарь сейчас"
                 setOnClickListener { startCalendarImport() }
             }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            addView(sourceRow("Уведомления телефона", "позже", "Будущий источник важных сообщений."))
-            addView(sourceRow("Контакты, ссылки, картинки", "позже", "Будут подключаться только с разрешения."))
         }.also { panel ->
             panel.layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
