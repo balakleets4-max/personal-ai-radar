@@ -576,6 +576,7 @@ class MainActivity : Activity() {
             "REMINDER" -> "Напоминание"
             "TASK" -> "Задача"
             "RISK" -> "Риск"
+            "CALENDAR" -> "Календарь"
             else -> "Мысль"
         }
     }
@@ -599,6 +600,8 @@ class MainActivity : Activity() {
             .replace("напоминание:", "")
             .replace("риск:", "")
             .replace("мысль:", "")
+            .replace("календарь:", "")
+            .replace("событие календаря:", "")
             .replace(Regex("\\s+"), " ")
             .trim()
     }
@@ -611,6 +614,17 @@ class MainActivity : Activity() {
 
     private fun formatDueAt(dueAt: Long): String {
         return SimpleDateFormat("dd.MM HH:mm", Locale.getDefault()).format(Date(dueAt))
+    }
+
+    private fun formatCardDueAt(card: RadarCardEntity): String {
+        val dueAt = card.dueAt ?: return ""
+        val isAllDayCalendar = card.type == "CALENDAR" &&
+            (card.description.contains("Время: весь день", ignoreCase = true) || card.whyText.contains("весь день", ignoreCase = true))
+        return if (isAllDayCalendar) {
+            "весь день ${SimpleDateFormat("dd.MM", Locale.getDefault()).format(Date(dueAt))}"
+        } else {
+            formatDueAt(dueAt)
+        }
     }
 
     private fun renderCards(cards: List<RadarCardEntity>) {
@@ -652,7 +666,7 @@ class MainActivity : Activity() {
             }
             if (card.dueAt != null) {
                 box.addView(TextView(this).apply {
-                    text = "Когда: ${formatDueAt(card.dueAt)}"
+                    text = "Когда: ${formatCardDueAt(card)}"
                     textSize = 15f
                     typeface = Typeface.DEFAULT_BOLD
                     setTextColor(Color.rgb(42, 100, 70))
