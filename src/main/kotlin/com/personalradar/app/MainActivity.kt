@@ -115,10 +115,6 @@ class MainActivity : Activity() {
             text = "🎙 Сказать"
             setOnClickListener { startVoiceCapture() }
         }
-        val calendarButton = Button(this).apply {
-            text = "📅 Сканировать календарь"
-            setOnClickListener { startCalendarImport() }
-        }
         activeButton = Button(this).apply {
             text = "Активные (0)"
             setOnClickListener { switchMode(RadarCardViewMode.ACTIVE) }
@@ -150,7 +146,6 @@ class MainActivity : Activity() {
             setPadding(22, 22, 22, 28)
             addView(input, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(voiceButton, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            addView(calendarButton, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(saveButton, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(status, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(buildSourcesSection(), ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -179,22 +174,22 @@ class MainActivity : Activity() {
                 setPadding(0, 0, 0, 6)
             })
             addView(TextView(this@MainActivity).apply {
-                text = "Откуда приложение уже умеет принимать важные сигналы."
+                text = "Откуда приложение принимает важные сигналы."
                 textSize = 14f
                 setTextColor(Color.rgb(80, 80, 88))
                 setPadding(0, 0, 0, 12)
             })
-            addView(sourceRow("Ручной ввод", "включён", "Можно вручную добавить мысль, дело или напоминание."))
-            addView(sourceRow("Голосовой захват", "улучшен", "Можно сказать мысль или напоминание голосом — аудио не сохраняется."))
-            addView(sourceRow("Поделиться", "включено", "Из другого приложения можно отправить текст через системную кнопку Поделиться."))
-            addView(sourceRow("Уведомления", "частично", "Приложение уже умеет отправлять собственные напоминания."))
-            addView(sourceRow("Календарь", "бета", "Ручной импорт ближайших событий календаря с разрешения владельца."))
+            addView(sourceRow("Ручной ввод", "включён", "Можно добавить мысль, дело или напоминание."))
+            addView(sourceRow("Голосовой захват", "включён", "Сказанная фраза превращается в карточку. Аудио не сохраняется."))
+            addView(sourceRow("Поделиться", "включено", "Можно отправить текст из другого приложения."))
+            addView(sourceRow("Уведомления", "включены", "Напоминания приходят через системные уведомления."))
+            addView(sourceRow("Календарь", "бета", "Сейчас доступна ручная проверка. Следующий шаг — фоновая проверка без открытия приложения."))
             addView(Button(this@MainActivity).apply {
-                text = "📅 Импортировать события календаря"
+                text = "Проверить календарь сейчас"
                 setOnClickListener { startCalendarImport() }
             }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            addView(sourceRow("Уведомления телефона", "позже", "Будущий источник для поиска важных сообщений и событий."))
-            addView(sourceRow("Контакты, ссылки, картинки", "позже", "Будут подключаться осторожно, только с явным разрешением."))
+            addView(sourceRow("Уведомления телефона", "позже", "Будущий источник важных сообщений."))
+            addView(sourceRow("Контакты, ссылки, картинки", "позже", "Будут подключаться только с разрешения."))
         }.also { panel ->
             panel.layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -379,7 +374,7 @@ class MainActivity : Activity() {
     }
 
     private fun startCalendarImport() {
-        status.text = "Открываю импорт календаря. Доступ будет запрошен отдельно."
+        status.text = "Проверяю календарь."
         startActivity(Intent(this, com.personalradar.app.calendar.CalendarImportActivity::class.java))
     }
 
