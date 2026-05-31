@@ -12,6 +12,9 @@ import android.widget.TextView
 import android.widget.Toast
 import com.personalradar.app.di.AppContainer
 import com.personalradar.app.reminder.ReminderScheduleResult
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -115,14 +118,15 @@ class CalendarImportActivity : Activity() {
                 val events = reader.readUpcomingEvents(daysAhead = 14, limit = 60)
                 val result = appContainer.calendarRadarImporter.importEvents(events)
                 val scheduledCount = scheduleNewCalendarReminders(appContainer, result)
+                val previewEvents = events.deduplicatedForPreview()
 
                 withContext(Dispatchers.Main) {
                     if (events.isEmpty()) {
                         status.text = "Ближайших событий календаря не найдено."
                         preview.text = "Создайте тестовое мероприятие в календаре и повторите сканирование. Важно: Google Tasks/Задачи — отдельный источник, они пока не читаются этим календарным модулем."
                     } else {
-                        status.text = buildStatusText(result, scheduledCount)
-                        preview.text = events.take(12).joinToString("\n\n") { event -> event.toPreviewText() }
+                        status.text = buildStatusText(result, scheduledCount, previewEvents.size)
+                        preview.text = previewEvents.take(12).joinToString("\n\n") { event -> event.toPreviewText() }
                     }
                 }
             } catch (t: Throwable) {
@@ -144,8 +148,25 @@ class CalendarImportActivity : Activity() {
         return scheduled
     }
 
-    private fun buildStatusText(result: CalendarImportResult, scheduledCount: Int): String {
-        return "Календарь просканирован. Найдено: ${result.total}. Новых карточек: ${result.created}. Уже были в Радаре: ${result.alreadyKnown}. Уведомлений запланировано: $scheduledCount. Активный контроль: ${result.activeCount}. Средний контроль: ${result.mediumCount}."
+    private fun buildStatusText(result: CalendarImportResult, scheduledCount: Int, previewCount: Int): String {
+        return "Календарь просканирован. Найдено: ${result.total}. Показано: $previewCount. Новых карточек: ${result.created}. Уже были в Радаре: ${result.alreadyKnown}. Уведомлений запланировано: $scheduledCount. Активный контроль: ${result.activeCount}. Средний контроль: ${result.mediumCount}."
+    }
+
+    private fun List<CalendarSourceEvent>.deduplicatedForPreview(): List<CalendarSourceEvent> {
+        val seen = linkedSetOf<String>()
+        return filter { event -> seen.add(event.previewDedupeKey()) }
+    }
+
+    private fun CalendarSourceEvent.previewDedupeKey(): String {
+        if (!allDay) return stableKey()
+        val normalizedTitle = title
+            .trim()
+            .lowercase(Locale.getDefault())
+            .replace(Regex("[^а-яёa-z0-9]+"), "-")
+            .trim('-')
+            .ifBlank { "event" }
+        val dayKey = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date(beginMillis))
+        return "calendar-preview:all-day:$normalizedTitle:$dayKey"
     }
 
     companion object {
