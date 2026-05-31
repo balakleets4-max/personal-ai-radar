@@ -31,6 +31,7 @@ import com.personalradar.app.quick.CaptureRadarController
 import com.personalradar.app.quick.CaptureRadarScreenState
 import com.personalradar.app.quick.RadarCardViewMode
 import com.personalradar.app.quick.RadarCounters
+import com.personalradar.app.reliability.BackgroundReliabilityNotifier
 import com.personalradar.app.reliability.BackgroundReliabilityStore
 import com.personalradar.app.reliability.PersistentWatchService
 import com.personalradar.app.reminder.ReminderScheduleResult
@@ -50,6 +51,7 @@ class MainActivity : Activity() {
     private lateinit var activeButton: Button
     private lateinit var hiddenButton: Button
     private lateinit var doneButton: Button
+    private lateinit var reliabilitySection: LinearLayout
     private var viewMode = RadarCardViewMode.ACTIVE
 
     private val calendarSyncListener: () -> Unit = {
@@ -59,11 +61,16 @@ class MainActivity : Activity() {
         }
     }
 
+    private val reliabilityListener: () -> Unit = {
+        refreshReliabilitySection()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         controller = AppContainer.get(applicationContext).captureRadarController
         setContentView(buildScreen())
         CalendarSyncNotifier.addListener(calendarSyncListener)
+        BackgroundReliabilityNotifier.addListener(reliabilityListener)
         requestNotificationPermissionIfNeeded()
         requestExactAlarmPermissionIfNeeded()
         activateCalendarBackgroundWork()
@@ -73,12 +80,14 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         CalendarSyncNotifier.removeListener(calendarSyncListener)
+        BackgroundReliabilityNotifier.removeListener(reliabilityListener)
         super.onDestroy()
     }
 
     override fun onResume() {
         super.onResume()
         activateCalendarBackgroundWork()
+        refreshReliabilitySection()
         if (::radarList.isInitialized) refreshRadarCards()
     }
 
@@ -158,6 +167,7 @@ class MainActivity : Activity() {
             addView(firstModeRow, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(secondModeRow, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
+        reliabilitySection = buildReliabilitySection()
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(22, 22, 22, 28)
@@ -166,7 +176,7 @@ class MainActivity : Activity() {
             addView(saveButton, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(status, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(buildSourcesSection(), ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            addView(buildReliabilitySection(), ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            addView(reliabilitySection, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(buildAiSettingsSection(), ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(TextView(this@MainActivity).apply {
                 text = "Активное"
@@ -200,24 +210,32 @@ class MainActivity : Activity() {
     }
 
     private fun buildReliabilitySection(): LinearLayout {
+        return panel(8, 8).apply { renderReliabilityContent(this) }
+    }
+
+    private fun refreshReliabilitySection() {
+        if (!::reliabilitySection.isInitialized) return
+        reliabilitySection.removeAllViews()
+        renderReliabilityContent(reliabilitySection)
+    }
+
+    private fun renderReliabilityContent(container: LinearLayout) {
         val store = BackgroundReliabilityStore(applicationContext)
         val persistentWatchEnabled = store.isPersistentWatchEnabled()
-        return panel(8, 8).apply {
-            addHeader("Надёжность фона", reliabilityStatusText())
-            addView(sourceRow("Календарь", if (hasCalendarPermission()) "разрешён" else "нет доступа", if (hasCalendarPermission()) "Можно читать события." else "Без доступа календарь не читается."))
-            addView(sourceRow("Уведомления", if (hasNotificationPermission()) "разрешены" else "нет доступа", if (hasNotificationPermission()) "Можно показывать напоминания." else "Без доступа напоминания могут не появляться."))
-            addView(sourceRow("Точные напоминания", if (canScheduleExactAlarms()) "разрешены" else "ограничены", if (canScheduleExactAlarms()) "События можно планировать точнее." else "Android может задерживать часть напоминаний."))
-            addView(sourceRow("Батарея", if (isIgnoringBatteryOptimizations()) "не ограничивает" else "может ограничивать", if (isIgnoringBatteryOptimizations()) "Android меньше мешает фоновой работе." else "На OnePlus лучше вручную разрешить фоновую активность."))
-            addView(sourceRow("Постоянное наблюдение", if (persistentWatchEnabled) "включено" else "выключено", if (persistentWatchEnabled) "Показывается постоянное уведомление." else "Для максимальной надёжности можно включить постоянное уведомление."))
-            addView(Button(this@MainActivity).apply {
-                text = if (persistentWatchEnabled) "Выключить постоянное наблюдение" else "Включить постоянное наблюдение"
-                setOnClickListener { togglePersistentWatch() }
-            }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            addView(Button(this@MainActivity).apply {
-                text = "Открыть настройки AI Радара"
-                setOnClickListener { openAppSettings() }
-            }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        }
+        container.addHeader("Надёжность фона", reliabilityStatusText())
+        container.addView(sourceRow("Календарь", if (hasCalendarPermission()) "разрешён" else "нет доступа", if (hasCalendarPermission()) "Можно читать события." else "Без доступа календарь не читается."))
+        container.addView(sourceRow("Уведомления", if (hasNotificationPermission()) "разрешены" else "нет доступа", if (hasNotificationPermission()) "Можно показывать напоминания." else "Без доступа напоминания могут не появляться."))
+        container.addView(sourceRow("Точные напоминания", if (canScheduleExactAlarms()) "разрешены" else "ограничены", if (canScheduleExactAlarms()) "События можно планировать точнее." else "Android может задерживать часть напоминаний."))
+        container.addView(sourceRow("Батарея", if (isIgnoringBatteryOptimizations()) "не ограничивает" else "может ограничивать", if (isIgnoringBatteryOptimizations()) "Android меньше мешает фоновой работе." else "На OnePlus лучше вручную разрешить фоновую активность."))
+        container.addView(sourceRow("Постоянное наблюдение", if (persistentWatchEnabled) "включено" else "выключено", if (persistentWatchEnabled) "Показывается постоянное уведомление." else "Для максимальной надёжности можно включить постоянное уведомление."))
+        container.addView(Button(this@MainActivity).apply {
+            text = if (persistentWatchEnabled) "Выключить постоянное наблюдение" else "Включить постоянное наблюдение"
+            setOnClickListener { togglePersistentWatch() }
+        }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        container.addView(Button(this@MainActivity).apply {
+            text = "Открыть настройки AI Радара"
+            setOnClickListener { openAppSettings() }
+        }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
     private fun buildAiSettingsSection(): LinearLayout {
@@ -420,14 +438,14 @@ class MainActivity : Activity() {
     private fun togglePersistentWatch() {
         val store = BackgroundReliabilityStore(applicationContext)
         if (store.isPersistentWatchEnabled()) {
-            store.setPersistentWatchEnabled(false)
             PersistentWatchService.stop(applicationContext)
-            rebuildScreenAfterSettingsChange("Постоянное наблюдение выключено.")
+            status.text = "Постоянное наблюдение выключено."
         } else {
             store.setPersistentWatchEnabled(true)
             PersistentWatchService.start(applicationContext)
-            rebuildScreenAfterSettingsChange("Постоянное наблюдение включено. В уведомлениях появится AI Радар.")
+            status.text = "Постоянное наблюдение включено. В уведомлениях появится AI Радар."
         }
+        refreshReliabilitySection()
     }
 
     private fun openAppSettings() {
