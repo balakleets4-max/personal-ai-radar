@@ -126,7 +126,8 @@ class CaptureRadarController(
             counters = snapshot.counters,
             deletedCard = deletedCard,
             deletedCardId = cardId,
-            cancelledReminderCardId = cardId
+            cancelledReminderCardId = cardId,
+            requestCalendarSync = deletedCard?.type == "CALENDAR"
         )
     }
 }
@@ -156,5 +157,6 @@ data class CaptureRadarScreenState(
     val restoredCard: RadarCardEntity? = null,
     val deletedCard: RadarCardEntity? = null,
     val deletedCardId: Long? = null,
-    val cancelledReminderCardId: Long? = null
+    val cancelledReminderCardId: Long? = null,
+    val requestCalendarSync: Boolean = false
 )
