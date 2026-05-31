@@ -113,25 +113,34 @@ data class CalendarSourceEvent(
         return "calendar:$calendarId:$eventId:$beginMillis"
     }
 
-    fun toRadarCaptureText(): String {
+    fun displayWhenText(): String {
         val dateFormatter = SimpleDateFormat("dd.MM HH:mm", Locale.getDefault())
         val dayFormatter = SimpleDateFormat("dd.MM", Locale.getDefault())
-        val whenText = if (allDay) {
-            "весь день ${dayFormatter.format(Date(beginMillis))}"
-        } else {
-            dateFormatter.format(Date(beginMillis))
-        }
+        return if (allDay) "весь день ${dayFormatter.format(Date(beginMillis))}" else dateFormatter.format(Date(beginMillis))
+    }
+
+    fun displayClockText(): String? {
+        if (allDay) return null
+        return SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(beginMillis))
+    }
+
+    fun toRadarCaptureText(): String {
         val locationText = location.takeIf { it.isNotBlank() }?.let { "; место: $it" }.orEmpty()
         val descriptionText = description.takeIf { it.isNotBlank() }?.let { "; описание: ${it.take(120)}" }.orEmpty()
-        return "Календарь: $title; когда: $whenText; контроль: ${controlMode.label}; источник: $calendarName; ключ: ${stableKey()}$locationText$descriptionText"
+        return "Календарь: $title; когда: ${displayWhenText()}; контроль: ${controlMode.label}$locationText$descriptionText"
+    }
+
+    fun toPreviewText(): String {
+        val place = location.takeIf { it.isNotBlank() }?.let { "\n  Место: $it" }.orEmpty()
+        return "• $title\n  Когда: ${displayWhenText()}\n  Контроль: ${controlMode.label}$place"
     }
 }
 
-enum class CalendarControlMode(val label: String) {
-    ACTIVE("активный контроль"),
-    MEDIUM("средний контроль"),
-    WEAK("слабый контроль"),
-    BACKGROUND("фоновый обзор");
+enum class CalendarControlMode(val label: String, val priority: Int) {
+    ACTIVE("активный контроль", 5),
+    MEDIUM("средний контроль", 4),
+    WEAK("слабый контроль", 3),
+    BACKGROUND("фоновый обзор", 2);
 
     companion object {
         fun fromDaysFromNow(days: Int): CalendarControlMode {
