@@ -23,6 +23,7 @@ class CalendarSyncRunner(
         )
         val result = appContainer.calendarRadarImporter.importEvents(events)
         scheduleCreatedCards(appContainer, result)
+        CalendarSyncNotifier.notifyCalendarSyncFinished()
         result
     }
 
