@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import com.personalradar.app.di.AppContainer
@@ -53,6 +54,18 @@ class CalendarImportActivity : Activity() {
             textSize = 15f
             setPadding(20, 12, 20, 16)
         }
+
+        val previewScroll = ScrollView(this).apply {
+            isFillViewport = false
+            addView(
+                preview,
+                ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+        }
+
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(18, 24, 18, 24)
@@ -62,7 +75,14 @@ class CalendarImportActivity : Activity() {
                 setPadding(20, 6, 20, 12)
             }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(status, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            addView(preview, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            addView(
+                previewScroll,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    0,
+                    1f
+                )
+            )
             addView(Button(this@CalendarImportActivity).apply {
                 text = "Сканировать календарь ещё раз"
                 setOnClickListener { scanCalendar() }
