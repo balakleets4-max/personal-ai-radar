@@ -22,8 +22,8 @@ class CalendarRadarImporter(
         events.forEach { event ->
             val sourceKey = event.stableKey()
             val dedupeKey = event.radarDedupeKey()
-            val existingCard = radarDao.findLatestCardByDedupeKey(dedupeKey)
-                ?: radarDao.findLatestCardByDedupeKey(sourceKey)
+            val existingCard = radarDao.findNonArchivedCardByDedupeKey(dedupeKey)
+                ?: radarDao.findNonArchivedCardByDedupeKey(sourceKey)
             if (existingCard != null) {
                 radarDao.bumpDuplicateHitCount(existingCard.id, now)
                 alreadyKnown++
