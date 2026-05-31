@@ -4,7 +4,9 @@ import com.personalradar.app.core.database.AppDatabase
 import com.personalradar.app.core.database.entity.AnalysisResultEntity
 import com.personalradar.app.core.database.entity.CaptureEntity
 import com.personalradar.app.core.database.entity.RadarCardEntity
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
 import java.util.Locale
 
 class CalendarRadarImporter(
@@ -18,8 +20,10 @@ class CalendarRadarImporter(
         var alreadyKnown = 0
 
         events.forEach { event ->
-            val dedupeKey = event.stableKey()
+            val sourceKey = event.stableKey()
+            val dedupeKey = event.radarDedupeKey()
             val existingCard = radarDao.findLatestCardByDedupeKey(dedupeKey)
+                ?: radarDao.findLatestCardByDedupeKey(sourceKey)
             if (existingCard != null) {
                 radarDao.bumpDuplicateHitCount(existingCard.id, now)
                 alreadyKnown++
@@ -155,4 +159,15 @@ private fun CalendarSourceEvent.reminderDueAt(): Long? {
         set(Calendar.SECOND, 0)
         set(Calendar.MILLISECOND, 0)
     }.timeInMillis
+}
+
+private fun CalendarSourceEvent.radarDedupeKey(): String {
+    if (!allDay) return stableKey()
+    val normalizedTitle = cleanTitle()
+        .lowercase(Locale.getDefault())
+        .replace(Regex("[^а-яёa-z0-9]+"), "-")
+        .trim('-')
+        .ifBlank { "event" }
+    val dayKey = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date(beginMillis))
+    return "calendar-semantic:all-day:$normalizedTitle:$dayKey"
 }
