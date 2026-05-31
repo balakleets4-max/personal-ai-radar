@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.personalradar.app.ai.AiSettingsStore
 import com.personalradar.app.ai.YandexAiClient
+import com.personalradar.app.calendar.CalendarRadarImporter
 import com.personalradar.app.core.database.AppDatabase
 import com.personalradar.app.quick.CaptureRadarController
 import com.personalradar.app.quick.QuickCaptureRepository
@@ -15,7 +16,8 @@ class AppContainer private constructor(
     val captureRadarController: CaptureRadarController,
     val reminderScheduler: ReminderScheduler,
     val aiSettingsStore: AiSettingsStore,
-    val yandexAiClient: YandexAiClient
+    val yandexAiClient: YandexAiClient,
+    val calendarRadarImporter: CalendarRadarImporter
 ) {
     companion object {
         @Volatile
@@ -38,7 +40,8 @@ class AppContainer private constructor(
             val repository = QuickCaptureRepository(database, aiSettingsStore, yandexAiClient)
             val controller = CaptureRadarController(database, repository)
             val reminderScheduler = ReminderScheduler(context)
-            return AppContainer(database, repository, controller, reminderScheduler, aiSettingsStore, yandexAiClient)
+            val calendarRadarImporter = CalendarRadarImporter(database)
+            return AppContainer(database, repository, controller, reminderScheduler, aiSettingsStore, yandexAiClient, calendarRadarImporter)
         }
     }
 }
