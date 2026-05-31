@@ -14,6 +14,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.ViewGroup
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -55,6 +56,11 @@ class MainActivity : Activity() {
         handleIncomingShare(intent)
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (::radarList.isInitialized) refreshRadarCards()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -81,6 +87,7 @@ class MainActivity : Activity() {
         }
 
         input.setText(spokenText)
+        hideKeyboardAndClearInputFocus()
         status.text = "Голос распознан. Обрабатываю: $spokenText"
         saveCaptureText(spokenText, fromShare = false)
     }
@@ -107,6 +114,10 @@ class MainActivity : Activity() {
         val voiceButton = Button(this).apply {
             text = "🎙 Сказать в Радар"
             setOnClickListener { startVoiceCapture() }
+        }
+        val calendarButton = Button(this).apply {
+            text = "📅 Сканировать календарь"
+            setOnClickListener { startCalendarImport() }
         }
         activeButton = Button(this).apply {
             text = "Активные (0)"
@@ -151,6 +162,7 @@ class MainActivity : Activity() {
             })
             addView(input, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(voiceButton, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            addView(calendarButton, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(saveButton, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(status, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(buildSourcesSection(), ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -188,7 +200,11 @@ class MainActivity : Activity() {
             addView(sourceRow("Голосовой захват", "улучшен", "Можно сказать мысль или напоминание голосом — аудио не сохраняется."))
             addView(sourceRow("Поделиться в Радар", "включено", "Из другого приложения нажмите Поделиться и выберите Личный ИИ-Радар."))
             addView(sourceRow("Уведомления Радара", "частично", "Приложение уже умеет отправлять собственные напоминания."))
-            addView(sourceRow("Календарь", "скоро", "Радар сможет читать события календаря с разрешения владельца."))
+            addView(sourceRow("Календарь", "бета", "Ручной импорт ближайших событий календаря с разрешения владельца."))
+            addView(Button(this@MainActivity).apply {
+                text = "📅 Импортировать события календаря"
+                setOnClickListener { startCalendarImport() }
+            }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(sourceRow("Уведомления телефона", "позже", "Будущий источник для поиска важных сообщений и событий."))
             addView(sourceRow("Контакты, ссылки, картинки", "позже", "Будут подключаться осторожно, только с явным разрешением."))
         }.also { panel ->
@@ -374,6 +390,17 @@ class MainActivity : Activity() {
         )
     }
 
+    private fun startCalendarImport() {
+        status.text = "Открываю импорт календаря. Доступ будет запрошен отдельно."
+        startActivity(Intent(this, com.personalradar.app.calendar.CalendarImportActivity::class.java))
+    }
+
+    private fun hideKeyboardAndClearInputFocus() {
+        input.clearFocus()
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        imm?.hideSoftInputFromWindow(input.windowToken, 0)
+    }
+
     private fun handleIncomingShare(incomingIntent: Intent?) {
         val text = extractSharedText(incomingIntent)?.trim() ?: return
         if (text.isBlank()) return
@@ -399,6 +426,7 @@ class MainActivity : Activity() {
                 withContext(Dispatchers.Main) {
                     viewMode = RadarCardViewMode.ACTIVE
                     input.setText("")
+                    hideKeyboardAndClearInputFocus()
                     renderState(state)
                     scheduleCreatedReminder(state)
                     if (fromShare && state.createdCard?.dueAt == null) {
