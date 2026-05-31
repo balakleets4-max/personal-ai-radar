@@ -22,6 +22,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import com.personalradar.app.calendar.CalendarBackgroundScheduler
+import com.personalradar.app.calendar.CalendarChangeObserverRegistry
 import com.personalradar.app.core.database.entity.RadarCardEntity
 import com.personalradar.app.di.AppContainer
 import com.personalradar.app.quick.CaptureRadarController
@@ -53,14 +54,14 @@ class MainActivity : Activity() {
         setContentView(buildScreen())
         requestNotificationPermissionIfNeeded()
         requestExactAlarmPermissionIfNeeded()
-        scheduleCalendarBackgroundChecks()
+        activateCalendarBackgroundWork()
         refreshRadarCards()
         handleIncomingShare(intent)
     }
 
     override fun onResume() {
         super.onResume()
-        scheduleCalendarBackgroundChecks()
+        activateCalendarBackgroundWork()
         if (::radarList.isInitialized) refreshRadarCards()
     }
 
@@ -186,7 +187,7 @@ class MainActivity : Activity() {
             addView(sourceRow("Голосовой захват", "включён", "Сказанная фраза превращается в карточку. Аудио не сохраняется."))
             addView(sourceRow("Поделиться", "включено", "Можно отправить текст из другого приложения."))
             addView(sourceRow("Уведомления", "включены", "Напоминания приходят через системные уведомления."))
-            addView(sourceRow("Календарь", "бета", "Работает фоновая проверка после выдачи разрешения."))
+            addView(sourceRow("Календарь", "бета", "Реагирует на изменения при активном процессе. Периодическая проверка остаётся страховкой."))
             addView(sourceRow("Уведомления телефона", "позже", "Будущий источник важных сообщений."))
             addView(sourceRow("Контакты, ссылки, картинки", "позже", "Будут подключаться только с разрешения."))
             addView(TextView(this@MainActivity).apply {
@@ -380,8 +381,9 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun scheduleCalendarBackgroundChecks() {
+    private fun activateCalendarBackgroundWork() {
         CalendarBackgroundScheduler(applicationContext).ensureScheduled()
+        CalendarChangeObserverRegistry.ensureRegistered(applicationContext)
     }
 
     private fun startVoiceCapture() {
