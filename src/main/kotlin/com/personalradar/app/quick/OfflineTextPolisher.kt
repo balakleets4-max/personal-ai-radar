@@ -19,6 +19,7 @@ object OfflineTextPolisher {
 
         text = removeNoise(text)
         text = normalizeActionStart(text)
+        text = normalizeKnownBadPhrases(text)
         text = cleanup(text)
 
         if (text.isBlank()) {
@@ -55,6 +56,7 @@ object OfflineTextPolisher {
             .replace(Regex("(?i)\\bчтоб\\s+оно\\s+(?:сработало|сработает|сыграло|сыграет)\\b"), " ")
             .replace(Regex("(?i)\\bоно\\s+(?:сработало|сработает|сыграло|сыграет)\\b"), " ")
             .replace(Regex("(?i)\\b(?:должно|должен|должна)\\s+(?:сработать|сыграть)\\b"), " ")
+            .replace(Regex("(?i)\\b(?:сработать|сработали|сработало|сработает|сыграть|сыграли|сыграло|сыграет)\\s+(?:уведомление|уведомления|напоминание|напоминания)\\b"), " ")
             .replace(Regex("\\s+"), " ")
             .trim()
     }
@@ -75,13 +77,24 @@ object OfflineTextPolisher {
             "должен сработать напоминание",
             "должно сработать напоминание",
             "сработать напоминание",
+            "сработать уведомление",
+            "сработать уведомления",
+            "сработали уведомления",
+            "сработало уведомление",
             "сработает напоминание",
+            "сработает уведомление",
+            "сработает уведомления",
             "сыграет напоминание",
+            "сыграет уведомление",
+            "сыграет уведомления",
             "напоминание должно сработать",
             "напоминание должно сработает",
+            "уведомление должно сработать",
+            "уведомление должно сработает",
             "напоминание о том что",
             "напоминание о том, что",
             "напоминание что",
+            "уведомление что",
             "напомни мне",
             "напомнить мне",
             "напомни",
@@ -107,6 +120,15 @@ object OfflineTextPolisher {
             .removePrefix("нужно ")
             .removePrefix("что ")
             .removePrefix("чтобы ")
+            .trim()
+    }
+
+    private fun normalizeKnownBadPhrases(text: String): String {
+        return text
+            .replace(Regex("(?i)\\bпоставить\\s+кипятиться\\s+воду\\b"), "поставить воду кипятиться")
+            .replace(Regex("(?i)\\bпоставить\\s+кипятится\\s+воду\\b"), "поставить воду кипятиться")
+            .replace(Regex("(?i)\\bпоставить\\s+греться\\s+воду\\b"), "поставить воду греться")
+            .replace(Regex("\\s+"), " ")
             .trim()
     }
 
@@ -142,9 +164,11 @@ object OfflineTextPolisher {
 
     private fun fallbackFromOriginal(rawText: String, dateSignal: DateSignal?): String {
         val clean = cleanup(
-            removeNoise(
-                removeGenericReminderOutcome(
-                    removeCalendarWords(DateTimeParser.removeRelativeDuration(rawText.lowercase(Locale.getDefault()).replace('ё', 'е')))
+            normalizeKnownBadPhrases(
+                removeNoise(
+                    removeGenericReminderOutcome(
+                        removeCalendarWords(DateTimeParser.removeRelativeDuration(rawText.lowercase(Locale.getDefault()).replace('ё', 'е')))
+                    )
                 )
             )
         )
