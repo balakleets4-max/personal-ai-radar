@@ -23,6 +23,7 @@ class CalendarSyncRunner(
         )
         val result = appContainer.calendarRadarImporter.importEvents(events)
         scheduleCreatedCards(appContainer, result)
+        removeReminderAlarmsForMissingCards(appContainer, result)
         CalendarSyncNotifier.notifyCalendarSyncFinished()
         result
     }
@@ -38,6 +39,12 @@ class CalendarSyncRunner(
         result.createdCardIds.forEach { cardId ->
             val card = appContainer.database.radarCardDao().getCardById(cardId) ?: return@forEach
             appContainer.reminderScheduler.schedule(card) as? ReminderScheduleResult.Scheduled
+        }
+    }
+
+    private fun removeReminderAlarmsForMissingCards(appContainer: AppContainer, result: CalendarImportResult) {
+        result.archivedMissingCardIds.forEach { cardId ->
+            appContainer.reminderScheduler.cancel(cardId)
         }
     }
 }
