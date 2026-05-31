@@ -109,27 +109,18 @@ class CalendarImportActivity : Activity() {
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                val appContainer = AppContainer.get(applicationContext)
                 val reader = CalendarSourceReader(applicationContext)
                 val events = reader.readUpcomingEvents(daysAhead = 14, limit = 60)
-                val repository = AppContainer.get(applicationContext).quickCaptureRepository
-                var created = 0
-
-                events.forEach { event ->
-                    repository.addCapture(event.toRadarCaptureText())
-                    created++
-                }
+                val result = appContainer.calendarRadarImporter.importEvents(events)
 
                 withContext(Dispatchers.Main) {
                     if (events.isEmpty()) {
                         status.text = "Ближайших событий календаря не найдено."
                         preview.text = "Создайте тестовое мероприятие в календаре и повторите сканирование. Важно: Google Tasks/Задачи — отдельный источник, они пока не читаются этим календарным модулем."
                     } else {
-                        val activeCount = events.count { it.controlMode == CalendarControlMode.ACTIVE }
-                        val mediumCount = events.count { it.controlMode == CalendarControlMode.MEDIUM }
-                        status.text = "Календарь просканирован. Создано карточек: $created. Активный контроль: $activeCount. Средний контроль: $mediumCount."
-                        preview.text = events.take(12).joinToString("\n\n") { event ->
-                            "• ${event.title}\n  ${event.calendarName}\n  ${event.toRadarCaptureText()}"
-                        }
+                        status.text = buildStatusText(result)
+                        preview.text = events.take(12).joinToString("\n\n") { event -> event.toPreviewText() }
                     }
                 }
             } catch (t: Throwable) {
@@ -139,6 +130,10 @@ class CalendarImportActivity : Activity() {
                 }
             }
         }
+    }
+
+    private fun buildStatusText(result: CalendarImportResult): String {
+        return "Календарь просканирован. Найдено: ${result.total}. Новых карточек: ${result.created}. Уже были в Радаре: ${result.alreadyKnown}. Активный контроль: ${result.activeCount}. Средний контроль: ${result.mediumCount}."
     }
 
     companion object {
