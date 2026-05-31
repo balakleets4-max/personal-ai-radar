@@ -12,6 +12,7 @@ import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings
 import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
@@ -29,6 +30,8 @@ import com.personalradar.app.quick.CaptureRadarController
 import com.personalradar.app.quick.CaptureRadarScreenState
 import com.personalradar.app.quick.RadarCardViewMode
 import com.personalradar.app.quick.RadarCounters
+import com.personalradar.app.reliability.BackgroundReliabilityStore
+import com.personalradar.app.reliability.PersistentWatchService
 import com.personalradar.app.reminder.ReminderScheduleResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -153,6 +156,7 @@ class MainActivity : Activity() {
             addView(saveButton, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(status, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(buildSourcesSection(), ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            addView(buildReliabilitySection(), ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(buildAiSettingsSection(), ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(TextView(this@MainActivity).apply {
                 text = "Активное"
@@ -211,6 +215,46 @@ class MainActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(0, 14, 0, 8) }
+        }
+    }
+
+    private fun buildReliabilitySection(): LinearLayout {
+        val reliabilityStore = BackgroundReliabilityStore(applicationContext)
+        val persistentWatchEnabled = reliabilityStore.isPersistentWatchEnabled()
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = softPanelBackground()
+            setPadding(20, 18, 20, 18)
+            addView(TextView(this@MainActivity).apply {
+                text = "Надёжность фона"
+                textSize = 21f
+                typeface = Typeface.DEFAULT_BOLD
+                setPadding(0, 0, 0, 6)
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = reliabilityStatusText()
+                textSize = 14f
+                setTextColor(Color.rgb(80, 80, 88))
+                setPadding(0, 0, 0, 12)
+            })
+            addView(sourceRow("Календарь", if (hasCalendarPermission()) "разрешён" else "нет доступа", if (hasCalendarPermission()) "Можно читать события." else "Без доступа календарь не читается."))
+            addView(sourceRow("Уведомления", if (hasNotificationPermission()) "разрешены" else "нет доступа", if (hasNotificationPermission()) "Можно показывать напоминания." else "Без доступа напоминания могут не появляться."))
+            addView(sourceRow("Точные напоминания", if (canScheduleExactAlarms()) "разрешены" else "ограничены", if (canScheduleExactAlarms()) "События можно планировать точнее." else "Android может задерживать часть напоминаний."))
+            addView(sourceRow("Батарея", if (isIgnoringBatteryOptimizations()) "не ограничивает" else "может ограничивать", if (isIgnoringBatteryOptimizations()) "Android меньше мешает фоновой работе." else "На OnePlus лучше вручную разрешить фоновую активность."))
+            addView(sourceRow("Постоянное наблюдение", if (persistentWatchEnabled) "включено" else "выключено", if (persistentWatchEnabled) "Показывается постоянное уведомление." else "Для максимальной надёжности можно включить постоянное уведомление."))
+            addView(Button(this@MainActivity).apply {
+                text = if (persistentWatchEnabled) "Выключить постоянное наблюдение" else "Включить постоянное наблюдение"
+                setOnClickListener { togglePersistentWatch() }
+            }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            addView(Button(this@MainActivity).apply {
+                text = "Открыть настройки батареи"
+                setOnClickListener { openBatterySettings() }
+            }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        }.also { panel ->
+            panel.layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 8, 0, 8) }
         }
     }
 
@@ -327,6 +371,10 @@ class MainActivity : Activity() {
         return "Провайдер: ${settings.provider}. Облачный анализ: $cloud. API: $key. $catalog. Данные отправляются наружу только после включения владельцем."
     }
 
+    private fun reliabilityStatusText(): String {
+        return "Здесь включается повышенная надёжность фоновой работы. В обычном режиме Android может ограничивать процесс ради батареи."
+    }
+
     private fun rebuildScreenAfterSettingsChange(message: String) {
         setContentView(buildScreen())
         status.text = message
@@ -398,6 +446,49 @@ class MainActivity : Activity() {
         status.text = "Проверяю календарь."
         CalendarBackgroundScheduler(applicationContext).runOnceSoon()
         startActivity(Intent(this, com.personalradar.app.calendar.CalendarImportActivity::class.java))
+    }
+
+    private fun togglePersistentWatch() {
+        val store = BackgroundReliabilityStore(applicationContext)
+        if (store.isPersistentWatchEnabled()) {
+            store.setPersistentWatchEnabled(false)
+            PersistentWatchService.stop(applicationContext)
+            rebuildScreenAfterSettingsChange("Постоянное наблюдение выключено.")
+        } else {
+            store.setPersistentWatchEnabled(true)
+            PersistentWatchService.start(applicationContext)
+            rebuildScreenAfterSettingsChange("Постоянное наблюдение включено. В уведомлениях появится AI Радар.")
+        }
+    }
+
+    private fun openBatterySettings() {
+        try {
+            startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        } catch (_: Throwable) {
+            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.parse("package:$packageName")
+            })
+        }
+    }
+
+    private fun hasCalendarPermission(): Boolean {
+        return checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun hasNotificationPermission(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun canScheduleExactAlarms(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        return alarmManager.canScheduleExactAlarms()
+    }
+
+    private fun isIgnoringBatteryOptimizations(): Boolean {
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        return powerManager.isIgnoringBatteryOptimizations(packageName)
     }
 
     private fun hideKeyboardAndClearInputFocus() {
