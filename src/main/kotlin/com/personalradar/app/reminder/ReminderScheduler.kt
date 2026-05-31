@@ -120,7 +120,7 @@ class ReminderScheduler(
     private fun buildReminderIntent(card: RadarCardEntity): Intent {
         return Intent(context, ReminderReceiver::class.java).apply {
             putExtra(ReminderReceiver.EXTRA_CARD_ID, card.id)
-            putExtra(ReminderReceiver.EXTRA_TITLE, "Напоминание")
+            putExtra(ReminderReceiver.EXTRA_TITLE, if (card.type == "CALENDAR") "Событие календаря" else "Напоминание")
             putExtra(ReminderReceiver.EXTRA_TEXT, buildHumanNotificationText(card))
         }
     }
@@ -136,6 +136,11 @@ class ReminderScheduler(
     }
 
     private fun buildHumanNotificationText(card: RadarCardEntity): String {
+        if (card.type == "CALENDAR") {
+            val title = cleanActionText(card.title).ifBlank { "событие календаря" }
+            return "Скоро событие: ${title.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }}."
+        }
+
         val description = card.description.trim()
         if (description.isNotBlank() && card.whyText.contains("ИИ: Yandex AI")) {
             return normalizeAiNotification(description)
@@ -174,6 +179,8 @@ class ReminderScheduler(
             .removePrefix("Задача:")
             .removePrefix("Мысль:")
             .removePrefix("Риск:")
+            .removePrefix("Календарь:")
+            .removePrefix("Событие календаря:")
             .lowercase()
             .replace(Regex("\\bнапомни(ть)?\\b"), "")
             .replace(Regex("\\bнапоминаю:?\\b"), "")
