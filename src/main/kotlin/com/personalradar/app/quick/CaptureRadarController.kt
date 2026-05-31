@@ -117,12 +117,14 @@ class CaptureRadarController(
     }
 
     suspend fun deleteCardAndLoadRadar(cardId: Long, mode: RadarCardViewMode): CaptureRadarScreenState {
+        val deletedCard = database.radarCardDao().getCardById(cardId)
         database.radarCardDao().archiveCard(cardId, System.currentTimeMillis())
         val snapshot = loadRadarSnapshot(mode)
         return CaptureRadarScreenState(
             message = "Карточка #$cardId убрана.",
             cards = snapshot.cards,
             counters = snapshot.counters,
+            deletedCard = deletedCard,
             deletedCardId = cardId,
             cancelledReminderCardId = cardId
         )
@@ -152,6 +154,7 @@ data class CaptureRadarScreenState(
     val counters: RadarCounters,
     val createdCard: RadarCardEntity? = null,
     val restoredCard: RadarCardEntity? = null,
+    val deletedCard: RadarCardEntity? = null,
     val deletedCardId: Long? = null,
     val cancelledReminderCardId: Long? = null
 )
