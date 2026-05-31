@@ -4,6 +4,7 @@ import com.personalradar.app.core.database.AppDatabase
 import com.personalradar.app.core.database.entity.AnalysisResultEntity
 import com.personalradar.app.core.database.entity.CaptureEntity
 import com.personalradar.app.core.database.entity.RadarCardEntity
+import java.util.Calendar
 import java.util.Locale
 
 class CalendarRadarImporter(
@@ -25,13 +26,16 @@ class CalendarRadarImporter(
                 return@forEach
             }
 
+            val language = detectLanguage(event.title + " " + event.description)
+            val reminderDueAt = event.reminderDueAt()
+
             val captureId = database.captureDao().insertCapture(
                 CaptureEntity(
                     rawText = event.toRadarCaptureText(),
                     createdAt = now,
                     updatedAt = now,
                     source = "calendar_provider",
-                    language = detectLanguage(event.title + " " + event.description),
+                    language = language,
                     status = "ACTIVE"
                 )
             )
@@ -43,14 +47,14 @@ class CalendarRadarImporter(
                     parserVersion = "calendar-source-v0.1",
                     analyzerVersion = "calendar-radar-importer-v0.1",
                     isLatest = true,
-                    language = detectLanguage(event.title + " " + event.description),
+                    language = language,
                     mainIntent = "CALENDAR",
                     secondaryIntent = null,
                     confidence = 0.92f,
                     summary = event.cleanTitle().take(120),
                     detectedDateText = event.displayWhenText(),
-                    detectedTimeText = if (event.allDay) null else event.displayClockText(),
-                    normalizedDateTime = event.beginMillis.takeIf { it > 0L },
+                    detectedTimeText = if (event.allDay) "09:00" else event.displayClockText(),
+                    normalizedDateTime = reminderDueAt,
                     hasAction = false,
                     hasRisk = false,
                     hasPerson = false,
@@ -72,7 +76,7 @@ class CalendarRadarImporter(
                     priority = event.controlMode.priority,
                     confidence = 0.92f,
                     status = "ACTIVE",
-                    dueAt = event.beginMillis.takeIf { it > 0L },
+                    dueAt = reminderDueAt,
                     createdAt = now,
                     updatedAt = now,
                     dedupeKey = dedupeKey,
@@ -99,6 +103,7 @@ class CalendarRadarImporter(
     private fun buildDescription(event: CalendarSourceEvent): String {
         val parts = mutableListOf<String>()
         parts.add("Событие из календаря.")
+        if (event.allDay) parts.add("Время: весь день.")
         if (event.location.isNotBlank()) parts.add("Место: ${event.location}.")
         if (event.description.isNotBlank()) parts.add("Описание: ${event.description.take(120)}.")
         return parts.joinToString(" ")
@@ -137,4 +142,17 @@ private fun CalendarSourceEvent.cleanTitle(): String {
         .replace(Regex("\\s+"), " ")
         .ifBlank { "Событие календаря" }
         .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
+}
+
+private fun CalendarSourceEvent.reminderDueAt(): Long? {
+    if (beginMillis <= 0L) return null
+    if (!allDay) return beginMillis
+
+    return Calendar.getInstance().apply {
+        timeInMillis = beginMillis
+        set(Calendar.HOUR_OF_DAY, 9)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
 }
