@@ -149,7 +149,9 @@ class CalendarImportActivity : Activity() {
     }
 
     private fun buildStatusText(result: CalendarImportResult, scheduledCount: Int, previewCount: Int): String {
-        return "Календарь просканирован. Найдено: ${result.total}. Показано: $previewCount. Новых карточек: ${result.created}. Уже были в Радаре: ${result.alreadyKnown}. Уведомлений запланировано: $scheduledCount. Активный контроль: ${result.activeCount}. Средний контроль: ${result.mediumCount}."
+        val mergedDuplicates = (result.total - previewCount).coerceAtLeast(0)
+        val mergedText = if (mergedDuplicates > 0) " Объединено дублей: $mergedDuplicates." else ""
+        return "Календарь просканирован. Найдено в календаре: ${result.total}. Показано после объединения: $previewCount.$mergedText Новых карточек: ${result.created}. Уже были в Радаре: ${result.alreadyKnown}. Уведомлений запланировано: $scheduledCount. Активный контроль: ${result.activeCount}. Средний контроль: ${result.mediumCount}."
     }
 
     private fun List<CalendarSourceEvent>.deduplicatedForPreview(): List<CalendarSourceEvent> {
