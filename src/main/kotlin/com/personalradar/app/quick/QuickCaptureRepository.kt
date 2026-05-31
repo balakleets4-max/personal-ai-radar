@@ -23,7 +23,6 @@ class QuickCaptureRepository(
         val language = detectLanguage(cleanText)
         val localDateSignal = parseDateSignal(cleanText, now)
         val cloudResult = tryCloudAnalysis(cleanText)
-        val cloudError = if (cloudResult == null) yandexAiClient?.lastErrorMessage else null
         val cloudDateSignal = cloudResult?.dueText?.takeIf { it.isNotBlank() }?.let { parseDateSignal(it, now) }
         val dateSignal = cloudDateSignal ?: localDateSignal
         val offlineActionText = OfflineTextPolisher.polishAction(cleanText, dateSignal).ifBlank { extractActionText(cleanText) }
@@ -34,7 +33,7 @@ class QuickCaptureRepository(
         val hasRisk = hasRiskSignal(cleanText) || mainIntent == "RISK"
         val hasReminder = hasReminderSignal(cleanText) || dateSignal != null || mainIntent == "REMINDER"
         val cardTitle = buildCardTitle(summary, mainIntent)
-        val whyText = buildWhyText(language, mainIntent, hasAction, hasRisk, hasReminder, dateSignal, cloudResult, cloudError)
+        val whyText = buildWhyText(language, mainIntent, hasAction, hasRisk, hasReminder, dateSignal, cloudResult)
 
         val captureId = database.captureDao().insertCapture(
             CaptureEntity(
@@ -74,7 +73,7 @@ class QuickCaptureRepository(
             RadarCardEntity(
                 captureId = captureId,
                 analysisId = analysisId,
-                radarEngineVersion = if (cloudResult != null) "ai-radar-v0.1" else "quick-radar-v0.6",
+                radarEngineVersion = if (cloudResult != null) "ai-radar-v0.1" else "quick-radar-v0.7-offline-polish",
                 type = mainIntent,
                 title = cardTitle,
                 description = cloudResult?.notification?.takeIf { it.isNotBlank() } ?: OfflineTextPolisher.buildOfflineNotification(actionText),
@@ -177,12 +176,10 @@ class QuickCaptureRepository(
         hasRisk: Boolean,
         hasReminder: Boolean,
         dateSignal: DateSignal?,
-        cloudResult: AiAnalysisResult?,
-        cloudError: String?
+        cloudResult: AiAnalysisResult?
     ): String {
         val signals = mutableListOf<String>()
         signals.add("ИИ: ${if (cloudResult != null) "Yandex AI" else "локальный офлайн-редактор"}")
-        if (cloudResult == null && !cloudError.isNullOrBlank()) signals.add("причина: ${cloudError.take(160)}")
         signals.add("язык: $language")
         signals.add("тип: ${humanIntent(intent)}")
         if (hasAction) signals.add("действие найдено")
