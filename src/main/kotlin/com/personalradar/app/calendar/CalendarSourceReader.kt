@@ -10,10 +10,9 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 class CalendarSourceReader(private val context: Context) {
-    fun readUpcomingEvents(daysAhead: Int = 14, limit: Int = 60): List<CalendarSourceEvent> {
+    fun readUpcomingEvents(daysAhead: Int = 28, limit: Int = 120): List<CalendarSourceEvent> {
         val now = System.currentTimeMillis()
         val end = now + TimeUnit.DAYS.toMillis(daysAhead.toLong().coerceAtLeast(1L))
-        val strongControlEnd = now + TimeUnit.DAYS.toMillis(7L)
         val builder = CalendarContract.Instances.CONTENT_URI.buildUpon()
         ContentUris.appendId(builder, now)
         ContentUris.appendId(builder, end)
@@ -45,11 +44,7 @@ class CalendarSourceReader(private val context: Context) {
                 if (title.isBlank()) continue
 
                 val beginMillis = cursor.getLongSafe(COL_BEGIN)
-                val controlMode = if (beginMillis <= strongControlEnd) {
-                    CalendarControlMode.STRONG
-                } else {
-                    CalendarControlMode.PASSIVE
-                }
+                val daysFromNow = ((beginMillis - now).coerceAtLeast(0L) / TimeUnit.DAYS.toMillis(1L)).toInt()
 
                 events.add(
                     CalendarSourceEvent(
@@ -62,7 +57,7 @@ class CalendarSourceReader(private val context: Context) {
                         beginMillis = beginMillis,
                         endMillis = cursor.getLongSafe(COL_END),
                         allDay = cursor.getIntSafe(COL_ALL_DAY) == 1,
-                        controlMode = controlMode
+                        controlMode = CalendarControlMode.fromDaysFromNow(daysFromNow)
                     )
                 )
             }
@@ -114,6 +109,10 @@ data class CalendarSourceEvent(
     val allDay: Boolean,
     val controlMode: CalendarControlMode
 ) {
+    fun stableKey(): String {
+        return "calendar:$calendarId:$eventId:$beginMillis"
+    }
+
     fun toRadarCaptureText(): String {
         val dateFormatter = SimpleDateFormat("dd.MM HH:mm", Locale.getDefault())
         val dayFormatter = SimpleDateFormat("dd.MM", Locale.getDefault())
@@ -122,17 +121,26 @@ data class CalendarSourceEvent(
         } else {
             dateFormatter.format(Date(beginMillis))
         }
-        val controlText = when (controlMode) {
-            CalendarControlMode.STRONG -> "усиленный контроль"
-            CalendarControlMode.PASSIVE -> "пассивный контроль"
-        }
         val locationText = location.takeIf { it.isNotBlank() }?.let { "; место: $it" }.orEmpty()
         val descriptionText = description.takeIf { it.isNotBlank() }?.let { "; описание: ${it.take(120)}" }.orEmpty()
-        return "Календарь: $title; когда: $whenText; контроль: $controlText; источник: $calendarName$locationText$descriptionText"
+        return "Календарь: $title; когда: $whenText; контроль: ${controlMode.label}; источник: $calendarName; ключ: ${stableKey()}$locationText$descriptionText"
     }
 }
 
-enum class CalendarControlMode {
-    STRONG,
-    PASSIVE
+enum class CalendarControlMode(val label: String) {
+    ACTIVE("активный контроль"),
+    MEDIUM("средний контроль"),
+    WEAK("слабый контроль"),
+    BACKGROUND("фоновый обзор");
+
+    companion object {
+        fun fromDaysFromNow(days: Int): CalendarControlMode {
+            return when {
+                days < 7 -> ACTIVE
+                days < 14 -> MEDIUM
+                days < 21 -> WEAK
+                else -> BACKGROUND
+            }
+        }
+    }
 }
