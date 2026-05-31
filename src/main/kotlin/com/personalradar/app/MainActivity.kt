@@ -24,6 +24,7 @@ import android.widget.TextView
 import android.widget.Toast
 import com.personalradar.app.calendar.CalendarBackgroundScheduler
 import com.personalradar.app.calendar.CalendarChangeObserverRegistry
+import com.personalradar.app.calendar.CalendarSyncNotifier
 import com.personalradar.app.core.database.entity.RadarCardEntity
 import com.personalradar.app.di.AppContainer
 import com.personalradar.app.quick.CaptureRadarController
@@ -33,13 +34,13 @@ import com.personalradar.app.quick.RadarCounters
 import com.personalradar.app.reliability.BackgroundReliabilityStore
 import com.personalradar.app.reliability.PersistentWatchService
 import com.personalradar.app.reminder.ReminderScheduleResult
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 class MainActivity : Activity() {
     private lateinit var controller: CaptureRadarController
@@ -51,15 +52,28 @@ class MainActivity : Activity() {
     private lateinit var doneButton: Button
     private var viewMode = RadarCardViewMode.ACTIVE
 
+    private val calendarSyncListener: () -> Unit = {
+        if (::radarList.isInitialized) {
+            refreshRadarCards()
+            status.text = "Календарь обновлён."
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         controller = AppContainer.get(applicationContext).captureRadarController
         setContentView(buildScreen())
+        CalendarSyncNotifier.addListener(calendarSyncListener)
         requestNotificationPermissionIfNeeded()
         requestExactAlarmPermissionIfNeeded()
         activateCalendarBackgroundWork()
         refreshRadarCards()
         handleIncomingShare(intent)
+    }
+
+    override fun onDestroy() {
+        CalendarSyncNotifier.removeListener(calendarSyncListener)
+        super.onDestroy()
     }
 
     override fun onResume() {
@@ -77,22 +91,18 @@ class MainActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != VOICE_INPUT_REQUEST_CODE) return
-
         if (resultCode != RESULT_OK) {
             status.text = "Голосовой захват отменён."
             return
         }
-
         val spokenText = data
             ?.getStringExtra(com.personalradar.app.voice.OfflineVoiceCaptureActivity.EXTRA_RECOGNIZED_TEXT)
             ?.trim()
             .orEmpty()
-
         if (spokenText.isBlank()) {
             status.text = "Не удалось распознать голос. Попробуйте ещё раз."
             return
         }
-
         input.setText(spokenText)
         hideKeyboardAndClearInputFocus()
         status.text = "Голос распознан. Обрабатываю: $spokenText"
@@ -171,22 +181,8 @@ class MainActivity : Activity() {
     }
 
     private fun buildSourcesSection(): LinearLayout {
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = softPanelBackground()
-            setPadding(20, 18, 20, 18)
-            addView(TextView(this@MainActivity).apply {
-                text = "Источники"
-                textSize = 21f
-                typeface = Typeface.DEFAULT_BOLD
-                setPadding(0, 0, 0, 6)
-            })
-            addView(TextView(this@MainActivity).apply {
-                text = "Откуда приложение принимает важные сигналы."
-                textSize = 14f
-                setTextColor(Color.rgb(80, 80, 88))
-                setPadding(0, 0, 0, 12)
-            })
+        return panel(14, 8).apply {
+            addHeader("Источники", "Откуда приложение принимает важные сигналы.")
             addView(sourceRow("Ручной ввод", "включён", "Можно добавить мысль, дело или напоминание."))
             addView(sourceRow("Голосовой захват", "включён", "Сказанная фраза превращается в карточку. Аудио не сохраняется."))
             addView(sourceRow("Поделиться", "включено", "Можно отправить текст из другого приложения."))
@@ -194,49 +190,20 @@ class MainActivity : Activity() {
             addView(sourceRow("Календарь", "бета", "Реагирует на изменения при активном процессе. Периодическая проверка остаётся страховкой."))
             addView(sourceRow("Уведомления телефона", "позже", "Будущий источник важных сообщений."))
             addView(sourceRow("Контакты, ссылки, картинки", "позже", "Будут подключаться только с разрешения."))
-            addView(TextView(this@MainActivity).apply {
-                text = "Ручная проверка"
-                textSize = 16f
-                typeface = Typeface.DEFAULT_BOLD
-                setPadding(0, 14, 0, 4)
-            })
-            addView(TextView(this@MainActivity).apply {
-                text = "Для теста и диагностики. Основная цель — фоновая работа."
-                textSize = 13f
-                setTextColor(Color.rgb(90, 90, 100))
-                setPadding(0, 0, 0, 6)
-            })
+            addSubHeader("Ручная проверка")
+            addSmallText("Для теста и диагностики. Основная цель — фоновая работа.")
             addView(Button(this@MainActivity).apply {
                 text = "Проверить календарь сейчас"
                 setOnClickListener { startCalendarImport() }
             }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        }.also { panel ->
-            panel.layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 14, 0, 8) }
         }
     }
 
     private fun buildReliabilitySection(): LinearLayout {
-        val reliabilityStore = BackgroundReliabilityStore(applicationContext)
-        val persistentWatchEnabled = reliabilityStore.isPersistentWatchEnabled()
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = softPanelBackground()
-            setPadding(20, 18, 20, 18)
-            addView(TextView(this@MainActivity).apply {
-                text = "Надёжность фона"
-                textSize = 21f
-                typeface = Typeface.DEFAULT_BOLD
-                setPadding(0, 0, 0, 6)
-            })
-            addView(TextView(this@MainActivity).apply {
-                text = reliabilityStatusText()
-                textSize = 14f
-                setTextColor(Color.rgb(80, 80, 88))
-                setPadding(0, 0, 0, 12)
-            })
+        val store = BackgroundReliabilityStore(applicationContext)
+        val persistentWatchEnabled = store.isPersistentWatchEnabled()
+        return panel(8, 8).apply {
+            addHeader("Надёжность фона", reliabilityStatusText())
             addView(sourceRow("Календарь", if (hasCalendarPermission()) "разрешён" else "нет доступа", if (hasCalendarPermission()) "Можно читать события." else "Без доступа календарь не читается."))
             addView(sourceRow("Уведомления", if (hasNotificationPermission()) "разрешены" else "нет доступа", if (hasNotificationPermission()) "Можно показывать напоминания." else "Без доступа напоминания могут не появляться."))
             addView(sourceRow("Точные напоминания", if (canScheduleExactAlarms()) "разрешены" else "ограничены", if (canScheduleExactAlarms()) "События можно планировать точнее." else "Android может задерживать часть напоминаний."))
@@ -247,14 +214,9 @@ class MainActivity : Activity() {
                 setOnClickListener { togglePersistentWatch() }
             }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(Button(this@MainActivity).apply {
-                text = "Открыть настройки батареи"
-                setOnClickListener { openBatterySettings() }
+                text = "Открыть настройки AI Радара"
+                setOnClickListener { openAppSettings() }
             }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        }.also { panel ->
-            panel.layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 8, 0, 8) }
         }
     }
 
@@ -273,16 +235,8 @@ class MainActivity : Activity() {
             setSingleLine(true)
             setPadding(18, 14, 18, 14)
         }
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = softPanelBackground()
-            setPadding(20, 18, 20, 18)
-            addView(TextView(this@MainActivity).apply {
-                text = "ИИ-анализ"
-                textSize = 21f
-                typeface = Typeface.DEFAULT_BOLD
-                setPadding(0, 0, 0, 6)
-            })
+        return panel(8, 8).apply {
+            addHeader("ИИ-анализ", null)
             addView(TextView(this@MainActivity).apply {
                 text = aiConnectionStatusText()
                 textSize = 16f
@@ -290,12 +244,7 @@ class MainActivity : Activity() {
                 setTextColor(aiConnectionStatusColor())
                 setPadding(0, 0, 0, 8)
             })
-            addView(TextView(this@MainActivity).apply {
-                text = aiSettingsSummary()
-                textSize = 14f
-                setTextColor(Color.rgb(80, 80, 88))
-                setPadding(0, 0, 0, 10)
-            })
+            addSmallText(aiSettingsSummary())
             addView(apiKeyInput, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(catalogInput, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             addView(Button(this@MainActivity).apply {
@@ -322,9 +271,7 @@ class MainActivity : Activity() {
                         status.text = "Сначала сохраните Catalog ID Yandex Cloud."
                     } else {
                         store.setCloudAnalysisEnabled(!current.cloudAnalysisEnabled)
-                        rebuildScreenAfterSettingsChange(
-                            if (current.cloudAnalysisEnabled) "Облачный ИИ-анализ выключен." else "Облачный ИИ-анализ включён."
-                        )
+                        rebuildScreenAfterSettingsChange(if (current.cloudAnalysisEnabled) "Облачный ИИ-анализ выключен." else "Облачный ИИ-анализ включён.")
                     }
                 }
             }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -335,12 +282,46 @@ class MainActivity : Activity() {
                     rebuildScreenAfterSettingsChange("Подключение Yandex AI удалено. Облачный анализ выключен.")
                 }
             }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        }.also { panel ->
-            panel.layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 8, 0, 8) }
         }
+    }
+
+    private fun panel(topMargin: Int, bottomMargin: Int): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = softPanelBackground()
+            setPadding(20, 18, 20, 18)
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, topMargin, 0, bottomMargin)
+            }
+        }
+    }
+
+    private fun LinearLayout.addHeader(title: String, description: String?) {
+        addView(TextView(this@MainActivity).apply {
+            text = title
+            textSize = 21f
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, 0, 0, 6)
+        })
+        if (!description.isNullOrBlank()) addSmallText(description)
+    }
+
+    private fun LinearLayout.addSubHeader(textValue: String) {
+        addView(TextView(this@MainActivity).apply {
+            text = textValue
+            textSize = 16f
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, 14, 0, 4)
+        })
+    }
+
+    private fun LinearLayout.addSmallText(textValue: String) {
+        addView(TextView(this@MainActivity).apply {
+            text = textValue
+            textSize = 13f
+            setTextColor(Color.rgb(90, 90, 100))
+            setPadding(0, 0, 0, 6)
+        })
     }
 
     private fun aiConnectionStatusText(): String {
@@ -372,7 +353,7 @@ class MainActivity : Activity() {
     }
 
     private fun reliabilityStatusText(): String {
-        return "Здесь включается повышенная надёжность фоновой работы. В обычном режиме Android может ограничивать процесс ради батареи."
+        return "Повышенная надёжность помогает Android не выгружать процесс. В обычном режиме система может ограничивать фон ради батареи."
     }
 
     private fun rebuildScreenAfterSettingsChange(message: String) {
@@ -401,11 +382,8 @@ class MainActivity : Activity() {
     }
 
     private fun requestNotificationPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val granted = checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-            if (!granted) {
-                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIFICATION_PERMISSION_REQUEST_CODE)
-            }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIFICATION_PERMISSION_REQUEST_CODE)
         }
     }
 
@@ -415,15 +393,9 @@ class MainActivity : Activity() {
             if (!alarmManager.canScheduleExactAlarms()) {
                 status.text = "Для точных напоминаний разрешите будильники и напоминания для приложения."
                 try {
-                    startActivity(
-                        Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
-                            data = Uri.parse("package:$packageName")
-                        }
-                    )
+                    startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply { data = Uri.parse("package:$packageName") })
                 } catch (_: Throwable) {
-                    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                        data = Uri.parse("package:$packageName")
-                    })
+                    openAppSettings()
                 }
             }
         }
@@ -436,10 +408,7 @@ class MainActivity : Activity() {
 
     private fun startVoiceCapture() {
         status.text = "Открываю офлайн-голос. Говорите спокойно, завершите кнопкой Готово."
-        startActivityForResult(
-            Intent(this, com.personalradar.app.voice.OfflineVoiceCaptureActivity::class.java),
-            VOICE_INPUT_REQUEST_CODE
-        )
+        startActivityForResult(Intent(this, com.personalradar.app.voice.OfflineVoiceCaptureActivity::class.java), VOICE_INPUT_REQUEST_CODE)
     }
 
     private fun startCalendarImport() {
@@ -461,14 +430,8 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun openBatterySettings() {
-        try {
-            startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-        } catch (_: Throwable) {
-            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.parse("package:$packageName")
-            })
-        }
+    private fun openAppSettings() {
+        startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply { data = Uri.parse("package:$packageName") })
     }
 
     private fun hasCalendarPermission(): Boolean {
@@ -476,8 +439,7 @@ class MainActivity : Activity() {
     }
 
     private fun hasNotificationPermission(): Boolean {
-        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun canScheduleExactAlarms(): Boolean {
@@ -505,10 +467,8 @@ class MainActivity : Activity() {
     }
 
     private fun extractSharedText(incomingIntent: Intent?): String? {
-        if (incomingIntent?.action != Intent.ACTION_SEND) return null
-        if (incomingIntent.type != "text/plain") return null
-        return incomingIntent.getStringExtra(Intent.EXTRA_TEXT)
-            ?: incomingIntent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
+        if (incomingIntent?.action != Intent.ACTION_SEND || incomingIntent.type != "text/plain") return null
+        return incomingIntent.getStringExtra(Intent.EXTRA_TEXT) ?: incomingIntent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
     }
 
     private fun saveCapture() {
@@ -525,9 +485,7 @@ class MainActivity : Activity() {
                     hideKeyboardAndClearInputFocus()
                     renderState(state)
                     scheduleCreatedReminder(state)
-                    if (fromShare && state.createdCard?.dueAt == null) {
-                        status.text = "Текст принят через Поделиться. Карточка создана."
-                    }
+                    if (fromShare && state.createdCard?.dueAt == null) status.text = "Текст принят через Поделиться. Карточка создана."
                 }
             } catch (t: Throwable) {
                 withContext(Dispatchers.Main) {
@@ -543,10 +501,7 @@ class MainActivity : Activity() {
         if (card.dueAt == null) return
         val result = AppContainer.get(applicationContext).reminderScheduler.schedule(card)
         status.text = when (result) {
-            is ReminderScheduleResult.Scheduled -> {
-                val mode = if (result.exact) "точное" else "примерное"
-                "${state.message}\nУведомление запланировано ($mode): ${formatDueAt(result.dueAt)}"
-            }
+            is ReminderScheduleResult.Scheduled -> "${state.message}\nУведомление запланировано (${if (result.exact) "точное" else "примерное"}): ${formatDueAt(result.dueAt)}"
             is ReminderScheduleResult.NotScheduled -> "${state.message}\nУведомление не запланировано: ${result.reason}"
         }
     }
@@ -556,10 +511,7 @@ class MainActivity : Activity() {
         if (card.dueAt == null) return
         val result = AppContainer.get(applicationContext).reminderScheduler.schedule(card)
         status.text = when (result) {
-            is ReminderScheduleResult.Scheduled -> {
-                val mode = if (result.exact) "точное" else "примерное"
-                "${state.message}\nУведомление снова запланировано ($mode): ${formatDueAt(result.dueAt)}"
-            }
+            is ReminderScheduleResult.Scheduled -> "${state.message}\nУведомление снова запланировано (${if (result.exact) "точное" else "примерное"}): ${formatDueAt(result.dueAt)}"
             is ReminderScheduleResult.NotScheduled -> "${state.message}\nУведомление не запланировано: ${result.reason}"
         }
     }
@@ -581,29 +533,11 @@ class MainActivity : Activity() {
     }
 
     private fun restoreCard(cardId: Long) {
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                val state = controller.restoreCardToActiveAndLoadRadar(cardId, RadarCardViewMode.ACTIVE)
-                withContext(Dispatchers.Main) { renderState(state) }
-            } catch (t: Throwable) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, t.message ?: "Не удалось вернуть карточку", Toast.LENGTH_LONG).show()
-                }
-            }
-        }
+        runCardAction { controller.restoreCardToActiveAndLoadRadar(cardId, RadarCardViewMode.ACTIVE) }
     }
 
     private fun deleteCard(cardId: Long) {
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                val state = controller.deleteCardAndLoadRadar(cardId, viewMode)
-                withContext(Dispatchers.Main) { renderState(state) }
-            } catch (t: Throwable) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, t.message ?: "Не удалось удалить карточку", Toast.LENGTH_LONG).show()
-                }
-            }
-        }
+        runCardAction { controller.deleteCardAndLoadRadar(cardId, viewMode) }
     }
 
     private fun refreshRadarCards() {
@@ -622,9 +556,7 @@ class MainActivity : Activity() {
                 val state = action()
                 withContext(Dispatchers.Main) { renderState(state) }
             } catch (t: Throwable) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, t.message ?: "Действие не выполнено", Toast.LENGTH_LONG).show()
-                }
+                withContext(Dispatchers.Main) { Toast.makeText(this@MainActivity, t.message ?: "Действие не выполнено", Toast.LENGTH_LONG).show() }
             }
         }
     }
@@ -716,11 +648,7 @@ class MainActivity : Activity() {
         val dueAt = card.dueAt ?: return ""
         val isAllDayCalendar = card.type == "CALENDAR" &&
             (card.description.contains("Время: весь день", ignoreCase = true) || card.whyText.contains("весь день", ignoreCase = true))
-        return if (isAllDayCalendar) {
-            "весь день ${SimpleDateFormat("dd.MM", Locale.getDefault()).format(Date(dueAt))}"
-        } else {
-            formatDueAt(dueAt)
-        }
+        return if (isAllDayCalendar) "весь день ${SimpleDateFormat("dd.MM", Locale.getDefault()).format(Date(dueAt))}" else formatDueAt(dueAt)
     }
 
     private fun renderCards(cards: List<RadarCardEntity>) {
@@ -787,13 +715,7 @@ class MainActivity : Activity() {
                         setOnClickListener { runCardAction { controller.hideCardAndLoadRadar(card.id) } }
                     })
                 }
-                RadarCardViewMode.HIDDEN -> {
-                    buttons.addView(Button(this).apply {
-                        text = "Вернуть"
-                        setOnClickListener { restoreCard(card.id) }
-                    })
-                }
-                RadarCardViewMode.DONE -> {
+                RadarCardViewMode.HIDDEN, RadarCardViewMode.DONE -> {
                     buttons.addView(Button(this).apply {
                         text = "Вернуть"
                         setOnClickListener { restoreCard(card.id) }
@@ -805,13 +727,7 @@ class MainActivity : Activity() {
                 setOnClickListener { deleteCard(card.id) }
             })
             box.addView(buttons)
-            radarList.addView(
-                box,
-                LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply { setMargins(0, 0, 0, 14) }
-            )
+            radarList.addView(box, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 0, 0, 14) })
         }
     }
 
