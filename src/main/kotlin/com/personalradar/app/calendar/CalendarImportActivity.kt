@@ -11,6 +11,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import com.personalradar.app.di.AppContainer
+import com.personalradar.app.reminder.ReminderScheduleResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -113,13 +114,14 @@ class CalendarImportActivity : Activity() {
                 val reader = CalendarSourceReader(applicationContext)
                 val events = reader.readUpcomingEvents(daysAhead = 14, limit = 60)
                 val result = appContainer.calendarRadarImporter.importEvents(events)
+                val scheduledCount = scheduleNewCalendarReminders(appContainer, result)
 
                 withContext(Dispatchers.Main) {
                     if (events.isEmpty()) {
                         status.text = "Ближайших событий календаря не найдено."
                         preview.text = "Создайте тестовое мероприятие в календаре и повторите сканирование. Важно: Google Tasks/Задачи — отдельный источник, они пока не читаются этим календарным модулем."
                     } else {
-                        status.text = buildStatusText(result)
+                        status.text = buildStatusText(result, scheduledCount)
                         preview.text = events.take(12).joinToString("\n\n") { event -> event.toPreviewText() }
                     }
                 }
@@ -132,8 +134,18 @@ class CalendarImportActivity : Activity() {
         }
     }
 
-    private fun buildStatusText(result: CalendarImportResult): String {
-        return "Календарь просканирован. Найдено: ${result.total}. Новых карточек: ${result.created}. Уже были в Радаре: ${result.alreadyKnown}. Активный контроль: ${result.activeCount}. Средний контроль: ${result.mediumCount}."
+    private suspend fun scheduleNewCalendarReminders(appContainer: AppContainer, result: CalendarImportResult): Int {
+        var scheduled = 0
+        result.createdCardIds.forEach { cardId ->
+            val card = appContainer.database.radarCardDao().getCardById(cardId) ?: return@forEach
+            val scheduleResult = appContainer.reminderScheduler.schedule(card)
+            if (scheduleResult is ReminderScheduleResult.Scheduled) scheduled++
+        }
+        return scheduled
+    }
+
+    private fun buildStatusText(result: CalendarImportResult, scheduledCount: Int): String {
+        return "Календарь просканирован. Найдено: ${result.total}. Новых карточек: ${result.created}. Уже были в Радаре: ${result.alreadyKnown}. Уведомлений запланировано: $scheduledCount. Активный контроль: ${result.activeCount}. Средний контроль: ${result.mediumCount}."
     }
 
     companion object {
