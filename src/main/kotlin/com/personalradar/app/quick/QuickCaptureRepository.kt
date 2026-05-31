@@ -26,7 +26,11 @@ class QuickCaptureRepository(
         val cloudDateSignal = cloudResult?.dueText?.takeIf { it.isNotBlank() }?.let { parseDateSignal(it, now) }
         val dateSignal = cloudDateSignal ?: localDateSignal
         val offlineActionText = OfflineTextPolisher.polishAction(cleanText, dateSignal).ifBlank { extractActionText(cleanText) }
-        val actionText = cloudResult?.action?.takeIf { it.isNotBlank() } ?: offlineActionText
+        val cloudActionText = cloudResult?.action
+            ?.takeIf { it.isNotBlank() }
+            ?.let { OfflineTextPolisher.polishAction(it, dateSignal) }
+            ?.takeIf { it.isNotBlank() }
+        val actionText = cloudActionText ?: offlineActionText
         val mainIntent = normalizeIntent(cloudResult?.type) ?: detectIntent(cleanText, dateSignal)
         val summary = actionText.ifBlank { cleanText }.take(120)
         val hasAction = hasActionSignal(cleanText) || actionText.isNotBlank()
@@ -34,6 +38,7 @@ class QuickCaptureRepository(
         val hasReminder = hasReminderSignal(cleanText) || dateSignal != null || mainIntent == "REMINDER"
         val cardTitle = buildCardTitle(summary, mainIntent)
         val whyText = buildWhyText(language, mainIntent, hasAction, hasRisk, hasReminder, dateSignal, cloudResult)
+        val notificationText = OfflineTextPolisher.buildOfflineNotification(actionText)
 
         val captureId = database.captureDao().insertCapture(
             CaptureEntity(
@@ -51,7 +56,7 @@ class QuickCaptureRepository(
                 captureId = captureId,
                 analyzedAt = now,
                 parserVersion = if (cloudResult != null) "yandex-ai-context-v0.1+datetime-v0.1" else "context-parser-v0.7-offline-polish",
-                analyzerVersion = if (cloudResult != null) "cloud-ai-analyzer-v0.1" else "offline-polisher-v0.1",
+                analyzerVersion = if (cloudResult != null) "cloud-ai-analyzer-v0.1+local-safety-polish" else "offline-polisher-v0.1",
                 isLatest = true,
                 language = language,
                 mainIntent = mainIntent,
@@ -73,10 +78,10 @@ class QuickCaptureRepository(
             RadarCardEntity(
                 captureId = captureId,
                 analysisId = analysisId,
-                radarEngineVersion = if (cloudResult != null) "ai-radar-v0.1" else "quick-radar-v0.7-offline-polish",
+                radarEngineVersion = if (cloudResult != null) "ai-radar-v0.2-local-safety" else "quick-radar-v0.7-offline-polish",
                 type = mainIntent,
                 title = cardTitle,
-                description = cloudResult?.notification?.takeIf { it.isNotBlank() } ?: OfflineTextPolisher.buildOfflineNotification(actionText),
+                description = notificationText,
                 whyText = whyText,
                 sourceQuote = cleanText.take(180),
                 priority = cloudResult?.importance ?: when {
@@ -179,7 +184,7 @@ class QuickCaptureRepository(
         cloudResult: AiAnalysisResult?
     ): String {
         val signals = mutableListOf<String>()
-        signals.add("ИИ: ${if (cloudResult != null) "Yandex AI" else "локальный офлайн-редактор"}")
+        signals.add("ИИ: ${if (cloudResult != null) "Yandex AI + локальная проверка" else "локальный офлайн-редактор"}")
         signals.add("язык: $language")
         signals.add("тип: ${humanIntent(intent)}")
         if (hasAction) signals.add("действие найдено")
