@@ -92,6 +92,8 @@ class CalendarRadarImporter(
             created++
         }
 
+        val archivedMissingCardIds = archiveMissingVisibleCalendarCards(events, now)
+
         return CalendarImportResult(
             total = events.size,
             created = created,
@@ -100,8 +102,25 @@ class CalendarRadarImporter(
             mediumCount = events.count { it.controlMode == CalendarControlMode.MEDIUM },
             weakCount = events.count { it.controlMode == CalendarControlMode.WEAK },
             backgroundCount = events.count { it.controlMode == CalendarControlMode.BACKGROUND },
-            createdCardIds = createdCardIds
+            createdCardIds = createdCardIds,
+            archivedMissingCardIds = archivedMissingCardIds
         )
+    }
+
+    private suspend fun archiveMissingVisibleCalendarCards(events: List<CalendarSourceEvent>, now: Long): List<Long> {
+        if (events.isEmpty()) return emptyList()
+        val minDueAt = events.minOf { it.reminderDueAt() ?: it.beginMillis }
+        val maxDueAt = events.maxOf { it.reminderDueAt() ?: it.beginMillis }
+        val sourceKeys = events.flatMap { event -> listOf(event.stableKey(), event.radarDedupeKey()) }.toSet()
+        val visibleCards = database.radarCardDao().getVisibleCalendarCardsInWindow(
+            fromMillis = minDueAt - CALENDAR_SYNC_WINDOW_TOLERANCE_MS,
+            toMillis = maxDueAt + CALENDAR_SYNC_WINDOW_TOLERANCE_MS
+        )
+        val missingCards = visibleCards.filter { card -> card.dedupeKey !in sourceKeys }
+        if (missingCards.isEmpty()) return emptyList()
+        val missingCardIds = missingCards.map { it.id }
+        database.radarCardDao().archiveCards(missingCardIds, now)
+        return missingCardIds
     }
 
     private fun buildDescription(event: CalendarSourceEvent): String {
@@ -127,6 +146,10 @@ class CalendarRadarImporter(
             else -> "UNKNOWN"
         }
     }
+
+    companion object {
+        private const val CALENDAR_SYNC_WINDOW_TOLERANCE_MS = 5L * 60L * 1000L
+    }
 }
 
 data class CalendarImportResult(
@@ -137,7 +160,8 @@ data class CalendarImportResult(
     val mediumCount: Int,
     val weakCount: Int,
     val backgroundCount: Int,
-    val createdCardIds: List<Long>
+    val createdCardIds: List<Long>,
+    val archivedMissingCardIds: List<Long> = emptyList()
 )
 
 private fun CalendarSourceEvent.cleanTitle(): String {
