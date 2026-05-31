@@ -26,12 +26,14 @@ class PersistentWatchService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             BackgroundReliabilityStore(applicationContext).setPersistentWatchEnabled(false)
+            BackgroundReliabilityNotifier.notifyChanged()
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
 
         BackgroundReliabilityStore(applicationContext).setPersistentWatchEnabled(true)
+        BackgroundReliabilityNotifier.notifyChanged()
         CalendarBackgroundScheduler(applicationContext).ensureScheduled()
         CalendarChangeObserverRegistry.ensureRegistered(applicationContext)
         return START_STICKY
@@ -93,6 +95,8 @@ class PersistentWatchService : Service() {
         }
 
         fun stop(context: Context) {
+            BackgroundReliabilityStore(context.applicationContext).setPersistentWatchEnabled(false)
+            BackgroundReliabilityNotifier.notifyChanged()
             context.stopService(Intent(context, PersistentWatchService::class.java))
         }
     }
