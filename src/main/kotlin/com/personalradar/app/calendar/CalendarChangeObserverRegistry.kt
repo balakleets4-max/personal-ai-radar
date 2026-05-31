@@ -9,6 +9,10 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.CalendarContract
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 object CalendarChangeObserverRegistry {
     private var observer: CalendarChangeObserver? = null
@@ -41,8 +45,12 @@ private class CalendarChangeObserver(
 ) : ContentObserver(Handler(Looper.getMainLooper())) {
     private val appContext = context.applicationContext
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val scheduleFollowUpChecks = Runnable {
-        CalendarBackgroundScheduler(appContext).runChangeFollowUpChecks()
+    private val syncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val syncNow = Runnable {
+        syncScope.launch {
+            runCatching { CalendarSyncRunner(appContext).syncUpcomingEvents() }
+            CalendarBackgroundScheduler(appContext).runChangeFollowUpChecks()
+        }
     }
 
     override fun onChange(selfChange: Boolean) {
@@ -50,11 +58,11 @@ private class CalendarChangeObserver(
     }
 
     override fun onChange(selfChange: Boolean, uri: Uri?) {
-        mainHandler.removeCallbacks(scheduleFollowUpChecks)
-        mainHandler.postDelayed(scheduleFollowUpChecks, DEBOUNCE_DELAY_MS)
+        mainHandler.removeCallbacks(syncNow)
+        mainHandler.postDelayed(syncNow, DEBOUNCE_DELAY_MS)
     }
 
     companion object {
-        private const val DEBOUNCE_DELAY_MS = 2_000L
+        private const val DEBOUNCE_DELAY_MS = 1_000L
     }
 }
