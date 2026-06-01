@@ -1,15 +1,24 @@
 package com.personalradar.app.quick
 
 import android.content.Context
+import com.personalradar.app.ai.AiCaptureResolutionResult
+import com.personalradar.app.ai.AiResolutionCard
+import com.personalradar.app.ai.AiSettingsStore
+import com.personalradar.app.ai.YandexAiClient
 import com.personalradar.app.calendar.CalendarBackgroundScheduler
 import com.personalradar.app.core.database.AppDatabase
 import com.personalradar.app.core.database.entity.RadarCardEntity
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class CaptureRadarController(
     private val context: Context,
     private val database: AppDatabase,
     private val repository: QuickCaptureRepository,
-    private val resolutionEngine: CaptureResolutionEngine = CaptureResolutionEngine()
+    private val resolutionEngine: CaptureResolutionEngine = CaptureResolutionEngine(),
+    private val aiSettingsStore: AiSettingsStore? = null,
+    private val yandexAiClient: YandexAiClient? = null
 ) {
     suspend fun loadRadarCards(mode: RadarCardViewMode): List<RadarCardEntity> {
         return when (mode) {
@@ -40,10 +49,70 @@ class CaptureRadarController(
     }
 
     suspend fun findSimilarManualCard(text: String): ManualDuplicateCandidate? {
+        val activeCards = database.radarCardDao().getActiveCardsSnapshot()
+        tryAiResolution(text, activeCards)?.let { return it }
         return resolutionEngine.findSimilarCapture(
             newText = text,
-            activeCards = database.radarCardDao().getActiveCardsSnapshot()
+            activeCards = activeCards
         )
+    }
+
+    private fun tryAiResolution(text: String, activeCards: List<RadarCardEntity>): ManualDuplicateCandidate? {
+        val settings = aiSettingsStore?.getSettings() ?: return null
+        val client = yandexAiClient ?: return null
+        if (!settings.canUseCloud || activeCards.isEmpty()) return null
+
+        val candidateCards = activeCards
+            .take(10)
+            .map { card ->
+                AiResolutionCard(
+                    id = card.id,
+                    title = card.title,
+                    sourceQuote = card.sourceQuote,
+                    description = card.description,
+                    type = card.type,
+                    dueText = card.dueAt?.let { formatDueForAi(it) }
+                )
+            }
+
+        val result = client.resolveCapture(text, candidateCards, settings) ?: return null
+        val decision = result.decision.lowercase(Locale.getDefault()).trim()
+        if (decision == "create_new") return null
+        if (result.confidence < AI_RESOLUTION_MIN_CONFIDENCE) return null
+        val targetId = result.targetCardId ?: return null
+        val targetCard = activeCards.firstOrNull { it.id == targetId } ?: return null
+        return ManualDuplicateCandidate(
+            existingCard = targetCard,
+            existingText = buildAiResolutionDialogText(targetCard, result),
+            newText = text.trim(),
+            debugText = buildAiResolutionDebugText(result)
+        )
+    }
+
+    private fun buildAiResolutionDialogText(card: RadarCardEntity, result: AiCaptureResolutionResult): String {
+        val liveMessage = result.userMessage.ifBlank {
+            "Yandex AI считает, что новая фраза может относиться к этой карточке."
+        }
+        return liveMessage + "\n\n" +
+            "Карточка:\n${card.sourceQuote.ifBlank { card.title }}\n\n" +
+            buildAiResolutionDebugText(result)
+    }
+
+    private fun buildAiResolutionDebugText(result: AiCaptureResolutionResult): String {
+        return "AI Resolution:\n" +
+            "- решение: ${result.decision}\n" +
+            "- уверенность: ${"%.2f".format(Locale.US, result.confidence)}\n" +
+            "- причина: ${result.developerReason.ifBlank { "—" }}\n" +
+            "- намерение: ${result.normalizedIntent.ifBlank { "—" }}\n" +
+            "- объект: ${result.normalizedObject.ifBlank { "—" }}\n" +
+            "- человек: ${result.normalizedPerson.ifBlank { "—" }}\n" +
+            "- место: ${result.normalizedPlace.ifBlank { "—" }}\n" +
+            "- старое время: ${result.normalizedOldTime.ifBlank { "—" }}\n" +
+            "- новое время: ${result.normalizedNewTime.ifBlank { "—" }}"
+    }
+
+    private fun formatDueForAi(dueAt: Long): String {
+        return SimpleDateFormat("EEEE dd.MM HH:mm", Locale("ru", "RU")).format(Date(dueAt))
     }
 
     suspend fun saveCaptureAndLoadRadar(text: String, mode: RadarCardViewMode): CaptureRadarScreenState {
@@ -134,6 +203,10 @@ class CaptureRadarController(
             cancelledReminderCardId = cardId,
             requestCalendarSync = deletedCard?.type == "CALENDAR"
         )
+    }
+
+    companion object {
+        private const val AI_RESOLUTION_MIN_CONFIDENCE = 0.55
     }
 }
 
