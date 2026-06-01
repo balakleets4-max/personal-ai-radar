@@ -3,6 +3,7 @@ package com.personalradar.app
 import android.Manifest
 import android.app.Activity
 import android.app.AlarmManager
+import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -29,6 +30,7 @@ import com.personalradar.app.core.database.entity.RadarCardEntity
 import com.personalradar.app.di.AppContainer
 import com.personalradar.app.quick.CaptureRadarController
 import com.personalradar.app.quick.CaptureRadarScreenState
+import com.personalradar.app.quick.ManualDuplicateCandidate
 import com.personalradar.app.quick.RadarCardViewMode
 import com.personalradar.app.quick.RadarCounters
 import com.personalradar.app.reliability.BackgroundReliabilityNotifier
@@ -114,7 +116,7 @@ class MainActivity : Activity() {
         }
         input.setText(spokenText)
         hideKeyboardAndClearInputFocus()
-        status.text = "Голос распознан. Обрабатываю: $spokenText"
+        status.text = "Голос распознан. Проверяю похожие заметки: $spokenText"
         saveCaptureText(spokenText, fromShare = false)
     }
 
@@ -493,10 +495,24 @@ class MainActivity : Activity() {
         saveCaptureText(input.text.toString(), fromShare = false)
     }
 
-    private fun saveCaptureText(text: String, fromShare: Boolean) {
+    private fun saveCaptureText(text: String, fromShare: Boolean, allowSimilar: Boolean = false) {
+        val trimmedText = text.trim()
+        if (trimmedText.isBlank()) {
+            status.text = "Введите текст захвата."
+            return
+        }
+
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val state = controller.saveCaptureAndLoadRadar(text, RadarCardViewMode.ACTIVE)
+                if (!fromShare && !allowSimilar) {
+                    val candidate = controller.findSimilarManualCard(trimmedText)
+                    if (candidate != null) {
+                        withContext(Dispatchers.Main) { showSimilarManualCaptureDialog(candidate) }
+                        return@launch
+                    }
+                }
+
+                val state = controller.saveCaptureAndLoadRadar(trimmedText, RadarCardViewMode.ACTIVE)
                 withContext(Dispatchers.Main) {
                     viewMode = RadarCardViewMode.ACTIVE
                     input.setText("")
@@ -509,6 +525,47 @@ class MainActivity : Activity() {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@MainActivity, t.message ?: "Не удалось сохранить захват", Toast.LENGTH_LONG).show()
                     status.text = "Не удалось сохранить захват: ${t.message ?: "неизвестная ошибка"}"
+                }
+            }
+        }
+    }
+
+    private fun showSimilarManualCaptureDialog(candidate: ManualDuplicateCandidate) {
+        status.text = "Найдена похожая заметка. Выберите действие."
+        AlertDialog.Builder(this)
+            .setTitle("Похожая заметка уже есть")
+            .setMessage(
+                "Существующая:\n${candidate.existingText}\n\n" +
+                    "Новая:\n${candidate.newText}\n\n" +
+                    "Заменить существующую или создать отдельную карточку?"
+            )
+            .setPositiveButton("Заменить") { _, _ ->
+                replaceSimilarManualCapture(candidate.newText, candidate.existingCard.id)
+            }
+            .setNegativeButton("Создать новую") { _, _ ->
+                saveCaptureText(candidate.newText, fromShare = false, allowSimilar = true)
+            }
+            .setNeutralButton("Отмена") { _, _ ->
+                status.text = "Сохранение отменено. Похожая заметка не изменена."
+            }
+            .show()
+    }
+
+    private fun replaceSimilarManualCapture(text: String, replaceCardId: Long) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val state = controller.replaceManualCardAndLoadRadar(text, replaceCardId, RadarCardViewMode.ACTIVE)
+                withContext(Dispatchers.Main) {
+                    viewMode = RadarCardViewMode.ACTIVE
+                    input.setText("")
+                    hideKeyboardAndClearInputFocus()
+                    renderState(state)
+                    scheduleCreatedReminder(state)
+                }
+            } catch (t: Throwable) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MainActivity, t.message ?: "Не удалось заменить заметку", Toast.LENGTH_LONG).show()
+                    status.text = "Не удалось заменить заметку: ${t.message ?: "неизвестная ошибка"}"
                 }
             }
         }
