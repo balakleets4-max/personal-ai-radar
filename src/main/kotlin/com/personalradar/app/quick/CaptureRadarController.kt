@@ -4,12 +4,12 @@ import android.content.Context
 import com.personalradar.app.calendar.CalendarBackgroundScheduler
 import com.personalradar.app.core.database.AppDatabase
 import com.personalradar.app.core.database.entity.RadarCardEntity
-import java.util.Locale
 
 class CaptureRadarController(
     private val context: Context,
     private val database: AppDatabase,
-    private val repository: QuickCaptureRepository
+    private val repository: QuickCaptureRepository,
+    private val resolutionEngine: CaptureResolutionEngine = CaptureResolutionEngine()
 ) {
     suspend fun loadRadarCards(mode: RadarCardViewMode): List<RadarCardEntity> {
         return when (mode) {
@@ -40,19 +40,10 @@ class CaptureRadarController(
     }
 
     suspend fun findSimilarManualCard(text: String): ManualDuplicateCandidate? {
-        val newKey = manualSemanticKey(text)
-        if (newKey.length < 4) return null
-        val best = database.radarCardDao()
-            .getActiveCardsSnapshot()
-            .filterNot { it.isImportedCalendarCard() }
-            .mapNotNull { card ->
-                val score = bestSimilarityScore(newKey, card)
-                if (score >= MANUAL_DUPLICATE_SCORE_THRESHOLD) card to score else null
-            }
-            .maxByOrNull { it.second }
-            ?.first
-            ?: return null
-        return ManualDuplicateCandidate(best, best.sourceQuote.ifBlank { best.title }, text.trim())
+        return resolutionEngine.findSimilarCapture(
+            newText = text,
+            activeCards = database.radarCardDao().getActiveCardsSnapshot()
+        )
     }
 
     suspend fun saveCaptureAndLoadRadar(text: String, mode: RadarCardViewMode): CaptureRadarScreenState {
@@ -142,82 +133,6 @@ class CaptureRadarController(
             deletedCardId = cardId,
             cancelledReminderCardId = cardId,
             requestCalendarSync = deletedCard?.type == "CALENDAR"
-        )
-    }
-
-    private fun bestSimilarityScore(newKey: String, card: RadarCardEntity): Double {
-        return cardManualKeys(card)
-            .map { similarityScore(newKey, it) }
-            .maxOrNull()
-            ?: 0.0
-    }
-
-    private fun cardManualKeys(card: RadarCardEntity): List<String> {
-        return listOf(card.sourceQuote, card.title, card.description, card.whyText)
-            .map { manualSemanticKey(it) }
-            .filter { it.isNotBlank() }
-            .distinct()
-    }
-
-    private fun similarityScore(left: String, right: String): Double {
-        if (left.isBlank() || right.isBlank()) return 0.0
-        if (left == right) return 1.0
-        val leftTokens = left.split(' ').filter { it.length > 2 }.toSet()
-        val rightTokens = right.split(' ').filter { it.length > 2 }.toSet()
-        if (leftTokens.isEmpty() || rightTokens.isEmpty()) return 0.0
-        val overlap = leftTokens.intersect(rightTokens).size.toDouble()
-        val union = leftTokens.union(rightTokens).size.toDouble()
-        if (overlap <= 0.0) return 0.0
-        val containment = maxOf(overlap / leftTokens.size.toDouble(), overlap / rightTokens.size.toDouble())
-        val jaccard = overlap / union
-        return maxOf(jaccard, containment * 0.92)
-    }
-
-    private fun RadarCardEntity.isImportedCalendarCard(): Boolean {
-        return radarEngineVersion.startsWith("calendar-radar") || sourceQuote.startsWith("Календарь:", ignoreCase = true)
-    }
-
-    private fun manualSemanticKey(text: String): String {
-        return text
-            .lowercase(Locale.getDefault())
-            .replace(Regex("\\b\\d{1,2}[:.]\\d{2}\\b"), " ")
-            .replace(Regex("\\b\\d+\\b"), " ")
-            .replace(Regex("\\b(ноль|нуль|один|одна|одно|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|одиннадцать|двенадцать|тринадцать|четырнадцать|пятнадцать|шестнадцать|семнадцать|восемнадцать|девятнадцать|двадцать|тридцать|сорок|пятьдесят|час|часа|часов|минут|минута|минуты)\\b"), " ")
-            .replace(Regex("\\b(сегодня|завтра|послезавтра|понедельник|понедельника|вторник|вторника|среда|среду|четверг|четверга|пятница|пятницу|суббота|субботу|воскресенье|воскресенья)\\b"), " ")
-            .replace(Regex("\\b(утром|днём|днем|вечером|ночью|время|было|поставлено|поставить|назначил|назначить|напомни|напомнить|мне|пожалуйста|надо|нужно|задача|напоминание|риск|мысль|там|еще|ещё|снова|сегодня|завтра)\\b"), " ")
-            .replace(Regex("[^а-яёa-z0-9]+"), " ")
-            .split(' ')
-            .mapNotNull { token -> normalizeManualToken(token) }
-            .filter { it.length > 2 }
-            .joinToString(" ")
-            .trim()
-    }
-
-    private fun normalizeManualToken(token: String): String? {
-        if (token.isBlank()) return null
-        return when {
-            token.startsWith("встреч") -> "встреч"
-            token.startsWith("встрет") -> "встреч"
-            token.startsWith("созвон") -> "созвон"
-            token.startsWith("звон") || token.startsWith("позвон") -> "звон"
-            token.startsWith("куп") -> "куп"
-            token.startsWith("заказ") || token.startsWith("закаж") -> "заказ"
-            token.startsWith("запис") -> "запис"
-            token.startsWith("врач") || token.startsWith("доктор") -> "врач"
-            token.startsWith("музе") -> "музей"
-            token.startsWith("работ") -> "работ"
-            token.startsWith("тест") -> "тест"
-            token in MANUAL_STOP_WORDS -> null
-            else -> token
-        }
-    }
-
-    companion object {
-        private const val MANUAL_DUPLICATE_SCORE_THRESHOLD = 0.62
-        private val MANUAL_STOP_WORDS = setOf(
-            "это", "этот", "эта", "эту", "как", "для", "что", "чтобы", "или", "уже", "будет", "была", "был", "были",
-            "в", "во", "на", "с", "со", "к", "ко", "по", "из", "от", "до", "при", "про", "без", "над", "под",
-            "необходимо", "присутствовать", "причина", "локальная", "проверка", "действие", "тип", "язык", "когда"
         )
     }
 }
