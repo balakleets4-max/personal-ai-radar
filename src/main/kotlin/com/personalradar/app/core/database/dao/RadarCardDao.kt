@@ -200,6 +200,20 @@ interface RadarCardDao {
         SELECT * FROM radar_cards
         WHERE type = 'CALENDAR'
         AND status IN ('ACTIVE', 'SNOOZED')
+        AND title = :title
+        AND dueAt BETWEEN :fromMillis AND :toMillis
+        ORDER BY updatedAt DESC, createdAt DESC
+    """)
+    suspend fun getVisibleCalendarCardsByTitleAndDueAt(
+        title: String,
+        fromMillis: Long,
+        toMillis: Long
+    ): List<RadarCardEntity>
+
+    @Query("""
+        SELECT * FROM radar_cards
+        WHERE type = 'CALENDAR'
+        AND status IN ('ACTIVE', 'SNOOZED')
         AND dueAt IS NOT NULL
         AND dueAt BETWEEN :fromMillis AND :toMillis
         ORDER BY dueAt ASC, createdAt DESC
