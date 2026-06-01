@@ -4,8 +4,6 @@ import android.app.Application
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.personalradar.app.calendar.CalendarBackgroundScheduler
 import com.personalradar.app.calendar.CalendarChangeObserverRegistry
-import com.personalradar.app.reliability.BackgroundReliabilityStore
-import com.personalradar.app.reliability.PersistentWatchService
 import io.sentry.Sentry
 import io.sentry.android.core.SentryAndroid
 
@@ -18,11 +16,6 @@ class PersonalAiRadarApplication : Application() {
         }
         safeStartup("calendar_observer_register") {
             CalendarChangeObserverRegistry.ensureRegistered(applicationContext)
-        }
-        safeStartup("persistent_watch_start") {
-            if (BackgroundReliabilityStore(applicationContext).isPersistentWatchEnabled()) {
-                PersistentWatchService.start(applicationContext)
-            }
         }
     }
 
