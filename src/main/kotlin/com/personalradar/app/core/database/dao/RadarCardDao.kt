@@ -154,6 +154,16 @@ interface RadarCardDao {
         SELECT * FROM radar_cards
         WHERE type = 'CALENDAR'
         AND status IN ('ACTIVE', 'SNOOZED')
+        AND dedupeKey LIKE :identityPattern
+        ORDER BY updatedAt DESC, createdAt DESC
+        LIMIT 1
+    """)
+    suspend fun findVisibleCalendarCardByIdentityPattern(identityPattern: String): RadarCardEntity?
+
+    @Query("""
+        SELECT * FROM radar_cards
+        WHERE type = 'CALENDAR'
+        AND status IN ('ACTIVE', 'SNOOZED')
         AND dueAt IS NOT NULL
         AND dueAt BETWEEN :fromMillis AND :toMillis
         ORDER BY dueAt ASC, createdAt DESC
