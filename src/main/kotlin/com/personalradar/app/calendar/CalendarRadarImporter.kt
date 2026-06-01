@@ -6,12 +6,18 @@ import com.personalradar.app.core.database.entity.CaptureEntity
 import com.personalradar.app.core.database.entity.RadarCardEntity
 import java.util.Calendar
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 class CalendarRadarImporter(
     private val database: AppDatabase
 ) {
-    suspend fun importEvents(events: List<CalendarSourceEvent>): CalendarImportResult {
-        val now = System.currentTimeMillis()
+    suspend fun importEvents(
+        events: List<CalendarSourceEvent>,
+        syncStartedAt: Long = System.currentTimeMillis(),
+        syncDaysAhead: Int = DEFAULT_SYNC_DAYS_AHEAD,
+        syncLimit: Int = DEFAULT_SYNC_LIMIT
+    ): CalendarImportResult {
+        val now = syncStartedAt
         val radarDao = database.radarCardDao()
         val createdCardIds = mutableListOf<Long>()
         val updatedCardIds = mutableListOf<Long>()
@@ -115,7 +121,12 @@ class CalendarRadarImporter(
             created++
         }
 
-        val archivedMissingCardIds = archiveMissingVisibleCalendarCards(events, now)
+        val archivedMissingCardIds = archiveMissingVisibleCalendarCards(
+            events = events,
+            now = now,
+            syncDaysAhead = syncDaysAhead,
+            syncLimit = syncLimit
+        )
         val allArchivedIds = (archivedMissingCardIds + archivedDuplicateCardIds).distinct()
 
         return CalendarImportResult(
@@ -185,16 +196,23 @@ class CalendarRadarImporter(
         return duplicateIds
     }
 
-    private suspend fun archiveMissingVisibleCalendarCards(events: List<CalendarSourceEvent>, now: Long): List<Long> {
-        if (events.isEmpty()) return emptyList()
-        val minDueAt = events.minOf { it.reminderDueAt() ?: it.beginMillis }
-        val maxDueAt = events.maxOf { it.reminderDueAt() ?: it.beginMillis }
+    private suspend fun archiveMissingVisibleCalendarCards(
+        events: List<CalendarSourceEvent>,
+        now: Long,
+        syncDaysAhead: Int,
+        syncLimit: Int
+    ): List<Long> {
+        // If the provider result is truncated, archiving would be unsafe: some existing events may simply be beyond the limit.
+        if (events.size >= syncLimit) return emptyList()
+
+        val syncWindowStart = now - CALENDAR_SYNC_WINDOW_TOLERANCE_MS
+        val syncWindowEnd = now + TimeUnit.DAYS.toMillis(syncDaysAhead.toLong().coerceAtLeast(1L)) + CALENDAR_SYNC_WINDOW_TOLERANCE_MS
         val sourceKeys = events.flatMap { event -> listOf(event.stableKey(), event.radarDedupeKey()) }.toSet()
         val sourcePrefixes = events.map { event -> event.sourceIdentityPrefix() }
         val semanticKeys = events.map { event -> event.semanticMergeKey() }.toSet()
         val visibleCards = database.radarCardDao().getVisibleCalendarCardsInWindow(
-            fromMillis = minDueAt - CALENDAR_SYNC_WINDOW_TOLERANCE_MS,
-            toMillis = maxDueAt + CALENDAR_SYNC_WINDOW_TOLERANCE_MS
+            fromMillis = syncWindowStart,
+            toMillis = syncWindowEnd
         )
         val missingCards = visibleCards.filter { card ->
             val key = card.dedupeKey.orEmpty()
@@ -231,6 +249,8 @@ class CalendarRadarImporter(
     }
 
     companion object {
+        private const val DEFAULT_SYNC_DAYS_AHEAD = 14
+        private const val DEFAULT_SYNC_LIMIT = 60
         private const val CALENDAR_SYNC_WINDOW_TOLERANCE_MS = 5L * 60L * 1000L
         private const val LEGACY_MATCH_TOLERANCE_MS = 2L * 60L * 60L * 1000L
         private const val SAME_EVENT_TIME_TOLERANCE_MS = 10L * 60L * 1000L
