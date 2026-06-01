@@ -6,10 +6,14 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Decides whether a new manual / voice capture looks like an update of an existing card.
+ * Predicts whether a new manual / voice capture is creating something new or changing an existing card.
  *
- * This intentionally runs before a new card is saved. It does not trust the card type returned
- * by cloud AI, because the same human intent can be classified as CALENDAR, REMINDER, TASK, etc.
+ * The engine separates the user's action from the object's clues:
+ * - action: create / update / move / clarify;
+ * - object clues: topic, person/place/details, old date, new date.
+ *
+ * This runs before a new card is saved and does not trust the type returned by cloud AI, because the
+ * same human intent can be classified as CALENDAR, REMINDER, TASK, etc.
  */
 class CaptureResolutionEngine {
     fun findSimilarCapture(
@@ -37,7 +41,7 @@ class CaptureResolutionEngine {
     private fun scoreCard(newFingerprint: CaptureFingerprint, card: RadarCardEntity): Double {
         val cardDateTokens = card.dateTokensFromDueAt()
         return card.resolutionTexts()
-            .map { CaptureFingerprint.from(it, extraDateTokens = cardDateTokens) }
+            .map { CaptureFingerprint.from(it, extraOldDateTokens = cardDateTokens) }
             .filter { it.isUseful }
             .map { oldFingerprint -> scoreFingerprints(newFingerprint, oldFingerprint, card.isImportedCalendarCard()) }
             .maxOrNull()
@@ -48,44 +52,44 @@ class CaptureResolutionEngine {
         val tokenScore = tokenSimilarity(new.tokens, old.tokens)
         val topicOverlap = new.topicTokens.intersect(old.topicTokens).isNotEmpty()
         val specificOverlap = new.specificTokens.intersect(old.specificTokens).isNotEmpty()
-        val dateOverlap = new.dateTokens.intersect(old.dateTokens).isNotEmpty()
+        val oldDateOverlap = new.oldDateTokens.intersect(old.allDateTokens).isNotEmpty()
+        val neutralDateOverlap = new.intent != CaptureIntent.UPDATE && new.allDateTokens.intersect(old.allDateTokens).isNotEmpty()
 
         var score = tokenScore
 
-        // Strong case: same specific context, for example
-        // “встреча с клиентом магазина” -> “встреча с клиентом магазина перенеслась”.
         if (topicOverlap && specificOverlap) {
-            score = maxOf(score, 0.82)
+            score = maxOf(score, if (new.intent == CaptureIntent.UPDATE) 0.86 else 0.82)
         }
 
-        // Date context matters. If the user says “встреча в понедельник перенеслась на субботу”,
-        // the old Monday card is a better match than another generic “встреча с мэром”.
-        if (topicOverlap && dateOverlap) {
-            score = maxOf(score, if (new.hasUpdateSignal) 0.88 else 0.76)
+        // In an update phrase, a date before the update signal usually points to the old object:
+        // “встреча в понедельник перенеслась на субботу” -> old object is the Monday meeting.
+        // A date after the update signal is the new target date and should not by itself select an old card.
+        if (topicOverlap && oldDateOverlap) {
+            score = maxOf(score, if (new.intent == CaptureIntent.UPDATE) 0.90 else 0.76)
         }
 
-        // Ambiguous but important case: “встреча с клиентом магазина...” -> “встреча перенеслась...”.
-        // The second phrase lost the specific context, but update wording says it probably refers
-        // to an existing card. We ask the user instead of silently creating a duplicate.
-        if (new.hasUpdateSignal && topicOverlap) {
+        if (topicOverlap && neutralDateOverlap) {
+            score = maxOf(score, 0.74)
+        }
+
+        if (new.intent == CaptureIntent.UPDATE && topicOverlap) {
             score = maxOf(score, when {
+                specificOverlap && oldDateOverlap -> 0.93
+                oldDateOverlap -> 0.90
                 specificOverlap -> 0.86
-                dateOverlap -> 0.88
-                else -> 0.68
+                tokenScore >= CONTAINMENT_MATCH_SCORE -> tokenScore
+                else -> 0.64
             })
         }
 
-        // Same short core, one side contains more details. This catches “встреча” vs
-        // “встреча с мэром” without hardcoding one concrete test phrase.
         if (topicOverlap && tokenScore >= CONTAINMENT_MATCH_SCORE) {
             score = maxOf(score, tokenScore)
         }
 
-        // Imported calendar cards can still be the correct target of a manual correction.
-        // But without date/specific context we do not want every generic “встреча” to attach
-        // to a random calendar event.
-        if (oldIsImportedCalendar && !dateOverlap && !specificOverlap && new.hasUpdateSignal) {
-            score = minOf(score, 0.64)
+        // Imported calendar cards can be corrected manually, but only when the text gives enough context.
+        // Otherwise a generic “встреча перенеслась” must not attach to a random calendar event.
+        if (oldIsImportedCalendar && new.intent == CaptureIntent.UPDATE && !oldDateOverlap && !specificOverlap) {
+            score = minOf(score, 0.63)
         }
 
         return score.coerceIn(0.0, 1.0)
@@ -129,28 +133,59 @@ class CaptureResolutionEngine {
     }
 }
 
+private enum class CaptureIntent {
+    CREATE,
+    UPDATE,
+    UNKNOWN
+}
+
 private data class CaptureFingerprint(
     val tokens: Set<String>,
     val topicTokens: Set<String>,
     val specificTokens: Set<String>,
-    val dateTokens: Set<String>,
-    val hasUpdateSignal: Boolean
+    val oldDateTokens: Set<String>,
+    val newDateTokens: Set<String>,
+    val intent: CaptureIntent
 ) {
+    val allDateTokens: Set<String> get() = oldDateTokens + newDateTokens
     val isUseful: Boolean get() = tokens.isNotEmpty() && (topicTokens.isNotEmpty() || tokens.size >= 2)
 
     companion object {
-        fun from(text: String, extraDateTokens: Set<String> = emptySet()): CaptureFingerprint {
+        fun from(text: String, extraOldDateTokens: Set<String> = emptySet()): CaptureFingerprint {
             val normalizedText = text.lowercase(Locale.getDefault())
-            val hasUpdateSignal = UPDATE_WORDS.any { it in normalizedText }
             val rawTokens = normalizedText
                 .replace(Regex("\\b\\d{1,2}[:.]\\d{2}\\b"), " ")
                 .replace(Regex("[^а-яёa-z0-9.]+"), " ")
                 .split(' ')
                 .filter { it.isNotBlank() }
 
-            val dateTokens = rawTokens
-                .mapNotNull { normalizeDateToken(it) }
-                .toSet() + extraDateTokens
+            val updateIndex = rawTokens.indexOfFirst { isUpdateWord(it) }
+            val intent = when {
+                updateIndex >= 0 -> CaptureIntent.UPDATE
+                CREATE_WORDS.any { it in normalizedText } -> CaptureIntent.CREATE
+                else -> CaptureIntent.UNKNOWN
+            }
+
+            val datesWithIndex = rawTokens.mapIndexedNotNull { index, token ->
+                normalizeDateToken(token)?.let { index to it }
+            }
+
+            val oldDateTokens = when {
+                intent == CaptureIntent.UPDATE && updateIndex >= 0 -> datesWithIndex
+                    .filter { it.first < updateIndex }
+                    .map { it.second }
+                    .toSet()
+                else -> datesWithIndex.map { it.second }.toSet()
+            } + extraOldDateTokens
+
+            val newDateTokens = if (intent == CaptureIntent.UPDATE && updateIndex >= 0) {
+                datesWithIndex
+                    .filter { it.first > updateIndex }
+                    .map { it.second }
+                    .toSet()
+            } else {
+                emptySet()
+            }
 
             val tokens = rawTokens
                 .mapNotNull { normalizeToken(it) }
@@ -162,13 +197,14 @@ private data class CaptureFingerprint(
                 .filterNot { it in TOPIC_TOKENS }
                 .filterNot { it in GENERIC_TOKENS }
                 .toSet()
-            return CaptureFingerprint(tokens, topicTokens, specificTokens, dateTokens, hasUpdateSignal)
+            return CaptureFingerprint(tokens, topicTokens, specificTokens, oldDateTokens, newDateTokens, intent)
         }
 
         private fun normalizeToken(rawToken: String): String? {
             val token = rawToken.trim()
             if (token.isBlank() || token in STOP_WORDS || normalizeDateToken(token) != null) return null
             if (token.matches(Regex("\\d+(\\.\\d+)?"))) return null
+            if (isUpdateWord(token)) return null
             return when {
                 token.startsWith("встреч") || token.startsWith("встрет") -> "встреч"
                 token.startsWith("созвон") -> "созвон"
@@ -182,13 +218,13 @@ private data class CaptureFingerprint(
                 token.startsWith("клиент") -> "клиент"
                 token.startsWith("магаз") -> "магазин"
                 token.startsWith("мэр") || token.startsWith("мер") -> "мэр"
-                token.startsWith("перенес") || token.startsWith("перенос") -> null
-                token.startsWith("измени") || token.startsWith("поменя") -> null
-                token.startsWith("сдвин") || token.startsWith("перестав") -> null
-                token.startsWith("назнач") -> null
                 token.startsWith("тест") -> "тест"
                 else -> token
             }
+        }
+
+        private fun isUpdateWord(token: String): Boolean {
+            return UPDATE_WORDS.any { token.startsWith(it) }
         }
 
         private val TOPIC_TOKENS = setOf(
@@ -200,9 +236,12 @@ private data class CaptureFingerprint(
         )
 
         private val UPDATE_WORDS = setOf(
-            "перенес", "перенос", "перенести", "перенеслась", "перенесли",
-            "измени", "изменить", "изменилась", "изменилось", "поменя", "поменять",
-            "теперь", "вместо", "другое время", "другой срок", "сдвин", "перестав", "назнач"
+            "перенес", "перенос", "перенести", "измени", "изменить", "поменя", "поменять",
+            "теперь", "вместо", "сдвин", "перестав", "переназнач", "уточн", "исправ"
+        )
+
+        private val CREATE_WORDS = setOf(
+            "создай", "создать", "добавь", "добавить", "запиши", "новая", "новое", "новый"
         )
 
         private val STOP_WORDS = setOf(
