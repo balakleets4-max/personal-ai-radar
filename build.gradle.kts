@@ -1,8 +1,25 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application") version "8.7.3"
     id("org.jetbrains.kotlin.android") version "2.0.21"
     id("org.jetbrains.kotlin.kapt") version "2.0.21"
 }
+
+val localProperties = Properties().apply {
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.inputStream().use(::load)
+    }
+}
+
+fun String.asBuildConfigString(): String =
+    "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+val sentryDsn: String = providers.gradleProperty("SENTRY_DSN")
+    .orElse(providers.environmentVariable("SENTRY_DSN"))
+    .orElse(localProperties.getProperty("SENTRY_DSN") ?: "")
+    .get()
 
 android {
     namespace = "com.personalradar.app"
@@ -16,6 +33,11 @@ android {
         versionName = "0.1.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "SENTRY_DSN", sentryDsn.asBuildConfigString())
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     signingConfigs {
@@ -68,6 +90,7 @@ dependencies {
     kapt("androidx.room:room-compiler:$roomVersion")
 
     implementation("com.alphacephei:vosk-android:0.3.75")
+    implementation("io.sentry:sentry-android:7.22.6")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("androidx.room:room-testing:$roomVersion")
