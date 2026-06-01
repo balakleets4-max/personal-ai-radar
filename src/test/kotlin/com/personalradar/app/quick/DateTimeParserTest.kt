@@ -63,14 +63,64 @@ class DateTimeParserTest {
     fun parsesMonthAndDays() {
         val result = DateTimeParser.parse("через 2 месяца 3 дня позвонить", baseMillis)
         assertNotNull(result)
-        assertEquals("через 2 месяца 3 дня", result!!.label)
+        assertEquals("через 2 месяца 3 дня 09:00", result!!.label)
 
         val expected = Calendar.getInstance().apply {
             timeInMillis = baseMillis
             add(Calendar.MONTH, 2)
             add(Calendar.DAY_OF_YEAR, 3)
+            set(Calendar.HOUR_OF_DAY, 9)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
         }.timeInMillis
         assertEquals(expected, result.timestampMillis)
+    }
+
+
+    @Test
+    fun parsesNamedMonthDate() {
+        val result = DateTimeParser.parse("съездить к родителям на дачу 26 августа", baseMillis)
+        assertNotNull(result)
+        assertEquals("26.08.2026 09:00", result!!.label)
+        assertEquals("26.08.2026", result.dateText)
+        assertEquals("09:00", result.timeText)
+
+        val expected = Calendar.getInstance().apply {
+            set(Calendar.YEAR, 2026)
+            set(Calendar.MONTH, Calendar.AUGUST)
+            set(Calendar.DAY_OF_MONTH, 26)
+            set(Calendar.HOUR_OF_DAY, 9)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        assertEquals(expected, result.timestampMillis)
+    }
+
+    @Test
+    fun parsesNamedMonthDateWithClockTime() {
+        val result = DateTimeParser.parse("съездить к родителям 26 августа в 17:05", baseMillis)
+        assertNotNull(result)
+        assertEquals("26.08.2026 17:05", result!!.label)
+        assertEquals("17:05", result.timeText)
+    }
+
+    @Test
+    fun rollsNamedMonthDateToNextYearWhenPast() {
+        val septemberBase = Calendar.getInstance().apply {
+            set(Calendar.YEAR, 2026)
+            set(Calendar.MONTH, Calendar.SEPTEMBER)
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 12)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        val result = DateTimeParser.parse("съездить к родителям на дачу 26 августа", septemberBase)
+        assertNotNull(result)
+        assertEquals("26.08.2027 09:00", result!!.label)
     }
 
     @Test

@@ -7,6 +7,7 @@ object DateTimeParser {
     fun parse(text: String, nowMillis: Long): DateSignal? {
         val lower = normalize(text)
         parseAbsoluteDateTime(lower, nowMillis)?.let { return it }
+        parseNamedMonthDateTime(lower, nowMillis)?.let { return it }
         parseRelativeDuration(lower, nowMillis)?.let { return it }
         return null
     }
@@ -14,6 +15,7 @@ object DateTimeParser {
     fun removeRelativeDuration(text: String): String {
         return RELATIVE_PHRASE_REGEX.replace(normalize(text), " ")
             .replace(ABSOLUTE_DATE_TIME_REGEX, " ")
+            .replace(NAMED_MONTH_DATE_TIME_REGEX, " ")
             .replace(Regex("\\s+"), " ")
             .trim(' ', ',', '.', '-', '—', ':', ';')
     }
@@ -23,8 +25,8 @@ object DateTimeParser {
         val day = match.groupValues[1].toIntOrNull() ?: return null
         val month = match.groupValues[2].toIntOrNull() ?: return null
         val rawYear = match.groupValues.getOrNull(3).orEmpty()
-        val hour = match.groupValues.getOrNull(4).orEmpty().toIntOrNull() ?: 9
-        val minute = match.groupValues.getOrNull(5).orEmpty().toIntOrNull() ?: 0
+        val hour = match.groupValues.getOrNull(4).orEmpty().toIntOrNull() ?: DEFAULT_HOUR
+        val minute = match.groupValues.getOrNull(5).orEmpty().toIntOrNull() ?: DEFAULT_MINUTE
 
         if (day !in 1..31 || month !in 1..12 || hour !in 0..23 || minute !in 0..59) return null
 
@@ -60,6 +62,56 @@ object DateTimeParser {
         )
     }
 
+    private fun parseNamedMonthDateTime(text: String, nowMillis: Long): DateSignal? {
+        val match = NAMED_MONTH_DATE_TIME_REGEX.find(text) ?: return null
+        val day = match.groupValues[1].toIntOrNull() ?: return null
+        val month = parseMonthName(match.groupValues[2]) ?: return null
+        val rawYear = match.groupValues.getOrNull(3).orEmpty()
+        val hour = match.groupValues.getOrNull(4).orEmpty().toIntOrNull() ?: DEFAULT_HOUR
+        val minute = match.groupValues.getOrNull(5).orEmpty().toIntOrNull() ?: DEFAULT_MINUTE
+
+        if (day !in 1..31 || hour !in 0..23 || minute !in 0..59) return null
+
+        val now = Calendar.getInstance().apply { timeInMillis = nowMillis }
+        val year = when {
+            rawYear.isBlank() -> now.get(Calendar.YEAR)
+            rawYear.length == 2 -> 2000 + rawYear.toInt()
+            else -> rawYear.toIntOrNull() ?: now.get(Calendar.YEAR)
+        }
+
+        val calendar = Calendar.getInstance().apply {
+            clear()
+            isLenient = false
+            set(Calendar.YEAR, year)
+            set(Calendar.MONTH, month - 1)
+            set(Calendar.DAY_OF_MONTH, day)
+            set(Calendar.HOUR_OF_DAY, hour)
+            set(Calendar.MINUTE, minute)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+
+        try {
+            calendar.timeInMillis
+        } catch (_: IllegalArgumentException) {
+            return null
+        }
+
+        if (rawYear.isBlank() && calendar.timeInMillis < nowMillis - ONE_DAY_MILLIS) {
+            calendar.add(Calendar.YEAR, 1)
+        }
+
+        val resolvedYear = calendar.get(Calendar.YEAR)
+        val dateText = "%02d.%02d.%04d".format(day, month, resolvedYear)
+        val timeText = "%02d:%02d".format(hour, minute)
+        return DateSignal(
+            label = "$dateText $timeText",
+            dateText = dateText,
+            timeText = timeText,
+            timestampMillis = calendar.timeInMillis
+        )
+    }
+
     private fun parseRelativeDuration(text: String, nowMillis: Long): DateSignal? {
         val match = RELATIVE_PHRASE_REGEX.find(text) ?: return null
         val phrase = match.value.trim()
@@ -80,11 +132,22 @@ object DateTimeParser {
             }
         }
 
+        val hasPreciseTimeUnit = parts.any { part ->
+            part.unit == TimeUnitName.HOUR || part.unit == TimeUnitName.MINUTE || part.unit == TimeUnitName.SECOND
+        }
+        val defaultTimeText = if (hasPreciseTimeUnit) null else {
+            calendar.set(Calendar.HOUR_OF_DAY, DEFAULT_HOUR)
+            calendar.set(Calendar.MINUTE, DEFAULT_MINUTE)
+            calendar.set(Calendar.SECOND, 0)
+            calendar.set(Calendar.MILLISECOND, 0)
+            DEFAULT_TIME_TEXT
+        }
+
         val label = buildLabel(parts)
         return DateSignal(
-            label = label,
+            label = if (defaultTimeText == null) label else "$label $defaultTimeText",
             dateText = label,
-            timeText = null,
+            timeText = defaultTimeText,
             timestampMillis = calendar.timeInMillis
         )
     }
@@ -154,6 +217,24 @@ object DateTimeParser {
         }
     }
 
+    private fun parseMonthName(token: String): Int? {
+        return when (token.trim('.', ',', ';', ':').lowercase(Locale.getDefault())) {
+            "января", "январь" -> 1
+            "февраля", "февраль" -> 2
+            "марта", "март" -> 3
+            "апреля", "апрель" -> 4
+            "мая", "май" -> 5
+            "июня", "июнь" -> 6
+            "июля", "июль" -> 7
+            "августа", "август" -> 8
+            "сентября", "сентябрь" -> 9
+            "октября", "октябрь" -> 10
+            "ноября", "ноябрь" -> 11
+            "декабря", "декабрь" -> 12
+            else -> null
+        }
+    }
+
     private fun mergeSameUnits(parts: List<DurationPart>): List<DurationPart> {
         val order = listOf(
             TimeUnitName.YEAR,
@@ -219,6 +300,9 @@ object DateTimeParser {
         YEAR
     }
 
+    private const val DEFAULT_HOUR = 9
+    private const val DEFAULT_MINUTE = 0
+    private const val DEFAULT_TIME_TEXT = "09:00"
     private const val ONE_DAY_MILLIS = 24L * 60L * 60L * 1000L
 
     private val WORD_NUMBERS = mapOf(
@@ -226,6 +310,8 @@ object DateTimeParser {
         "один" to 1,
         "одна" to 1,
         "одно" to 1,
+        "одну" to 1,
+        "одного" to 1,
         "два" to 2,
         "две" to 2,
         "три" to 3,
@@ -264,8 +350,9 @@ object DateTimeParser {
         "девятьсот" to 900
     )
 
+    private const val MONTH_NAMES = "января|январь|февраля|февраль|марта|март|апреля|апрель|мая|май|июня|июнь|июля|июль|августа|август|сентября|сентябрь|октября|октябрь|ноября|ноябрь|декабря|декабрь"
     private val UNIT_PATTERN = "(?:секунд[ауые]?|сек|минут[ауые]?|мин|час(?:а|ов)?|день|дня|дней|дн[яей]*|недел[яюьиь]*|месяц(?:а|ев)?|мес|год|года|лет)"
-    private val NUMBER_PATTERN = "(?:\\d+|ноль|один|одна|одно|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|одиннадцать|двенадцать|тринадцать|четырнадцать|пятнадцать|шестнадцать|семнадцать|восемнадцать|девятнадцать|двадцать|тридцать|сорок|пятьдесят|шестьдесят|семьдесят|восемьдесят|девяносто|сто|двести|триста|четыреста|пятьсот|шестьсот|семьсот|восемьсот|девятьсот)"
+    private val NUMBER_PATTERN = "(?:\\d+|ноль|один|одна|одно|одну|одного|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|одиннадцать|двенадцать|тринадцать|четырнадцать|пятнадцать|шестнадцать|семнадцать|восемнадцать|девятнадцать|двадцать|тридцать|сорок|пятьдесят|шестьдесят|семьдесят|восемьдесят|девяносто|сто|двести|триста|четыреста|пятьсот|шестьсот|семьсот|восемьсот|девятьсот)"
     private val DURATION_PART_PATTERN = "(?:(?:$NUMBER_PATTERN)(?:\\s+$NUMBER_PATTERN)*\\s+)?$UNIT_PATTERN"
     private val RELATIVE_PHRASE_REGEX = Regex(
         "через\\s+$DURATION_PART_PATTERN(?:\\s*(?:и|,)?\\s*$DURATION_PART_PATTERN)*",
@@ -273,6 +360,10 @@ object DateTimeParser {
     )
     private val ABSOLUTE_DATE_TIME_REGEX = Regex(
         "\\b(\\d{1,2})[./](\\d{1,2})(?:[./](\\d{2,4}))?(?:\\s*(?:в|,)?\\s*(\\d{1,2})[:.](\\d{2}))?\\b",
+        RegexOption.IGNORE_CASE
+    )
+    private val NAMED_MONTH_DATE_TIME_REGEX = Regex(
+        "\\b(\\d{1,2})\\s+($MONTH_NAMES)(?:\\s+(\\d{2,4}))?(?:\\s*(?:в|,)?\\s*(\\d{1,2})[:.](\\d{2}))?\\b",
         RegexOption.IGNORE_CASE
     )
 }
