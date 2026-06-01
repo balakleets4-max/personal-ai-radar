@@ -115,8 +115,14 @@ class CalendarImportActivity : Activity() {
             try {
                 val appContainer = AppContainer.get(applicationContext)
                 val reader = CalendarSourceReader(applicationContext)
-                val events = reader.readUpcomingEvents(daysAhead = 14, limit = 60)
-                val result = appContainer.calendarRadarImporter.importEvents(events)
+                val syncStartedAt = System.currentTimeMillis()
+                val events = reader.readUpcomingEvents(daysAhead = CALENDAR_SYNC_DAYS_AHEAD, limit = CALENDAR_SYNC_LIMIT)
+                val result = appContainer.calendarRadarImporter.importEvents(
+                    events = events,
+                    syncStartedAt = syncStartedAt,
+                    syncDaysAhead = CALENDAR_SYNC_DAYS_AHEAD,
+                    syncLimit = CALENDAR_SYNC_LIMIT
+                )
                 val scheduledCount = scheduleCalendarReminders(appContainer, result.createdCardIds)
                 val rescheduledCount = rescheduleCalendarReminders(appContainer, result.updatedCardIds)
                 cancelRemovedCalendarReminders(appContainer, result.archivedMissingCardIds)
@@ -125,8 +131,13 @@ class CalendarImportActivity : Activity() {
 
                 withContext(Dispatchers.Main) {
                     if (events.isEmpty()) {
-                        status.text = "Ближайших событий календаря не найдено."
-                        preview.text = "Создайте тестовое мероприятие в календаре и повторите сканирование. Важно: Google Tasks/Задачи — отдельный источник, они пока не читаются этим календарным модулем."
+                        status.text = buildStatusText(result, scheduledCount, rescheduledCount, previewEvents.size)
+                        val removedText = if (result.archivedMissingCardIds.isNotEmpty()) {
+                            "\n\nУбрано удалённых из календаря карточек: ${result.archivedMissingCardIds.size}."
+                        } else {
+                            ""
+                        }
+                        preview.text = "Ближайших событий календаря не найдено.$removedText\n\nСоздайте тестовое мероприятие в календаре и повторите сканирование. Важно: Google Tasks/Задачи — отдельный источник, они пока не читаются этим календарным модулем."
                     } else {
                         status.text = buildStatusText(result, scheduledCount, rescheduledCount, previewEvents.size)
                         preview.text = previewEvents.take(12).joinToString("\n\n") { event -> event.toPreviewText() }
@@ -194,5 +205,7 @@ class CalendarImportActivity : Activity() {
 
     companion object {
         private const val READ_CALENDAR_REQUEST_CODE = 3001
+        private const val CALENDAR_SYNC_DAYS_AHEAD = 14
+        private const val CALENDAR_SYNC_LIMIT = 60
     }
 }
