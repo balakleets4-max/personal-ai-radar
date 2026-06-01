@@ -54,6 +54,14 @@ class CaptureResolutionEngine {
         val specificOverlap = new.specificTokens.intersect(old.specificTokens).isNotEmpty()
         val oldDateOverlap = new.oldDateTokens.intersect(old.allDateTokens).isNotEmpty()
         val neutralDateOverlap = new.intent != CaptureIntent.UPDATE && new.allDateTokens.intersect(old.allDateTokens).isNotEmpty()
+        val newAddsSpecificToGenericOld = new.intent != CaptureIntent.UPDATE &&
+            topicOverlap &&
+            new.specificTokens.isNotEmpty() &&
+            old.specificTokens.isEmpty()
+        val genericUpdateWithoutOldObject = new.intent == CaptureIntent.UPDATE &&
+            topicOverlap &&
+            new.specificTokens.isEmpty() &&
+            new.oldDateTokens.isEmpty()
 
         var score = tokenScore
 
@@ -84,6 +92,20 @@ class CaptureResolutionEngine {
 
         if (topicOverlap && tokenScore >= CONTAINMENT_MATCH_SCORE) {
             score = maxOf(score, tokenScore)
+        }
+
+        // Life-context rule: “встреча с мэром” after a generic “встреча” is usually a new,
+        // more specific event, not an update. If the user really wants to change the old card,
+        // they normally says “перенеси/измени/уточни”.
+        if (newAddsSpecificToGenericOld) {
+            score = minOf(score, 0.54)
+        }
+
+        // A bare “встреча перенеслась на пятницу” is an update action, but it does not name the
+        // old object. Do not let containment alone confidently attach it to the newest meeting.
+        // It may still surface as a cautious candidate if there is no better context.
+        if (genericUpdateWithoutOldObject && !specificOverlap && !oldDateOverlap) {
+            score = minOf(score, 0.64)
         }
 
         // Imported calendar cards can be corrected manually, but only when the text gives enough context.
