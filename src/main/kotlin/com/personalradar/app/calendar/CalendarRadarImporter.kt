@@ -19,7 +19,7 @@ class CalendarRadarImporter(
         var created = 0
         var alreadyKnown = 0
 
-        events.forEach { event ->
+        events.deduplicatedSourceEvents().forEach { event ->
             val dedupeKey = event.radarDedupeKey()
             val existingCard = findBestExistingCard(event)
             if (existingCard != null) {
@@ -132,6 +132,11 @@ class CalendarRadarImporter(
         )
     }
 
+    private fun List<CalendarSourceEvent>.deduplicatedSourceEvents(): List<CalendarSourceEvent> {
+        val seen = linkedSetOf<String>()
+        return filter { event -> seen.add(event.semanticMergeKey()) }
+    }
+
     private suspend fun findBestExistingCard(event: CalendarSourceEvent): RadarCardEntity? {
         val radarDao = database.radarCardDao()
         val dedupeKey = event.radarDedupeKey()
@@ -142,6 +147,11 @@ class CalendarRadarImporter(
         return radarDao.findNonArchivedCardByDedupeKey(dedupeKey)
             ?: radarDao.findNonArchivedCardByDedupeKey(legacySourceKey)
             ?: radarDao.findVisibleCalendarCardByIdentityPattern(identityPattern)
+            ?: radarDao.getVisibleCalendarCardsByTitleAndDueAt(
+                title = event.cleanTitle(),
+                fromMillis = dueAt - SAME_EVENT_TIME_TOLERANCE_MS,
+                toMillis = dueAt + SAME_EVENT_TIME_TOLERANCE_MS
+            ).firstOrNull()
             ?: radarDao.getVisibleCalendarCardsByCalendarAndDueAt(
                 calendarPattern = calendarPattern,
                 fromMillis = dueAt - LEGACY_MATCH_TOLERANCE_MS,
@@ -155,13 +165,19 @@ class CalendarRadarImporter(
 
     private suspend fun archiveDuplicateCardsForEvent(event: CalendarSourceEvent, keepCardId: Long, now: Long): List<Long> {
         val radarDao = database.radarCardDao()
+        val dueAt = event.reminderDueAt() ?: event.beginMillis
         val identityMatches = radarDao.getVisibleCalendarCardsByIdentityPattern(event.sourceIdentityPrefix() + "%")
+        val sameTitleTimeMatches = radarDao.getVisibleCalendarCardsByTitleAndDueAt(
+            title = event.cleanTitle(),
+            fromMillis = dueAt - SAME_EVENT_TIME_TOLERANCE_MS,
+            toMillis = dueAt + SAME_EVENT_TIME_TOLERANCE_MS
+        )
         val sameTimeMatches = radarDao.getVisibleCalendarCardsByCalendarAndDueAt(
             calendarPattern = event.calendarPattern(),
-            fromMillis = (event.reminderDueAt() ?: event.beginMillis) - LEGACY_MATCH_TOLERANCE_MS,
-            toMillis = (event.reminderDueAt() ?: event.beginMillis) + LEGACY_MATCH_TOLERANCE_MS
+            fromMillis = dueAt - LEGACY_MATCH_TOLERANCE_MS,
+            toMillis = dueAt + LEGACY_MATCH_TOLERANCE_MS
         )
-        val duplicateIds = (identityMatches + sameTimeMatches)
+        val duplicateIds = (identityMatches + sameTitleTimeMatches + sameTimeMatches)
             .map { it.id }
             .filter { it != keepCardId }
             .distinct()
@@ -175,13 +191,14 @@ class CalendarRadarImporter(
         val maxDueAt = events.maxOf { it.reminderDueAt() ?: it.beginMillis }
         val sourceKeys = events.flatMap { event -> listOf(event.stableKey(), event.radarDedupeKey()) }.toSet()
         val sourcePrefixes = events.map { event -> event.sourceIdentityPrefix() }
+        val semanticKeys = events.map { event -> event.semanticMergeKey() }.toSet()
         val visibleCards = database.radarCardDao().getVisibleCalendarCardsInWindow(
             fromMillis = minDueAt - CALENDAR_SYNC_WINDOW_TOLERANCE_MS,
             toMillis = maxDueAt + CALENDAR_SYNC_WINDOW_TOLERANCE_MS
         )
         val missingCards = visibleCards.filter { card ->
             val key = card.dedupeKey.orEmpty()
-            key !in sourceKeys && sourcePrefixes.none { prefix -> key.startsWith(prefix) }
+            key !in sourceKeys && sourcePrefixes.none { prefix -> key.startsWith(prefix) } && card.semanticMergeKey() !in semanticKeys
         }
         if (missingCards.isEmpty()) return emptyList()
         val missingCardIds = missingCards.map { it.id }
@@ -216,6 +233,7 @@ class CalendarRadarImporter(
     companion object {
         private const val CALENDAR_SYNC_WINDOW_TOLERANCE_MS = 5L * 60L * 1000L
         private const val LEGACY_MATCH_TOLERANCE_MS = 2L * 60L * 60L * 1000L
+        private const val SAME_EVENT_TIME_TOLERANCE_MS = 10L * 60L * 1000L
     }
 }
 
@@ -263,4 +281,12 @@ private fun CalendarSourceEvent.sourceIdentityPrefix(): String {
 
 private fun CalendarSourceEvent.calendarPattern(): String {
     return "calendar:$calendarId:%"
+}
+
+private fun CalendarSourceEvent.semanticMergeKey(): String {
+    return "calendar-semantic:${cleanTitle().lowercase(Locale.getDefault())}:${reminderDueAt() ?: beginMillis}"
+}
+
+private fun RadarCardEntity.semanticMergeKey(): String {
+    return "calendar-semantic:${title.trim().lowercase(Locale.getDefault())}:${dueAt ?: 0L}"
 }
