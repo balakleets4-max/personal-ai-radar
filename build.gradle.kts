@@ -4,6 +4,8 @@ plugins {
     id("com.android.application") version "8.7.3"
     id("org.jetbrains.kotlin.android") version "2.0.21"
     id("org.jetbrains.kotlin.kapt") version "2.0.21"
+    id("com.google.gms.google-services") version "4.4.4"
+    id("com.google.firebase.crashlytics") version "3.0.7"
 }
 
 val localProperties = Properties().apply {
@@ -91,6 +93,9 @@ dependencies {
 
     implementation("com.alphacephei:vosk-android:0.3.75")
     implementation("io.sentry:sentry-android:7.22.6")
+
+    implementation(platform("com.google.firebase:firebase-bom:34.14.0"))
+    implementation("com.google.firebase:firebase-crashlytics")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("androidx.room:room-testing:$roomVersion")
