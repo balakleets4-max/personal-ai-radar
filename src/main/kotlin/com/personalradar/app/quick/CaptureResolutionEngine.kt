@@ -6,36 +6,44 @@ import java.util.Date
 import java.util.Locale
 
 class CaptureResolutionEngine {
-    fun findSimilarCapture(
-        newText: String,
-        activeCards: List<RadarCardEntity>
-    ): ManualDuplicateCandidate? {
+    fun findSimilarCapture(newText: String, activeCards: List<RadarCardEntity>): ManualDuplicateCandidate? {
         val newFingerprint = CaptureFingerprint.from(newText)
         if (!newFingerprint.isUseful) return null
 
         val best = activeCards
-            .mapNotNull { card ->
-                val score = scoreCard(newFingerprint, card)
-                if (score >= DUPLICATE_SCORE_THRESHOLD) card to score else null
-            }
-            .maxWithOrNull(compareBy<Pair<RadarCardEntity, Double>> { it.second }.thenBy { it.first.updatedAt })
+            .mapNotNull { card -> scoreCard(newFingerprint, card) }
+            .filter { it.score >= DUPLICATE_SCORE_THRESHOLD }
+            .maxWithOrNull(compareBy<CaptureResolutionOption> { it.score }.thenBy { it.card.updatedAt })
             ?: return null
 
         return ManualDuplicateCandidate(
-            existingCard = best.first,
-            existingText = best.first.sourceQuote.ifBlank { best.first.title },
-            newText = newText.trim()
+            existingCard = best.card,
+            existingText = best.card.sourceQuote.ifBlank { best.card.title },
+            newText = newText.trim(),
+            debugText = buildDebugText(newFingerprint, best)
         )
     }
 
-    private fun scoreCard(newFingerprint: CaptureFingerprint, card: RadarCardEntity): Double {
+    private fun scoreCard(newFingerprint: CaptureFingerprint, card: RadarCardEntity): CaptureResolutionOption? {
         val cardDateTokens = card.dateTokensFromDueAt()
-        return card.resolutionTexts()
+        val oldIsImportedCalendar = card.isImportedCalendarCard()
+        val bestOld = card.resolutionTexts()
             .map { CaptureFingerprint.from(it, extraOldDateTokens = cardDateTokens) }
             .filter { it.isUseful }
-            .map { oldFingerprint -> scoreFingerprints(newFingerprint, oldFingerprint, card.isImportedCalendarCard()) }
-            .maxOrNull()
-            ?: 0.0
+            .map { oldFingerprint ->
+                val score = scoreFingerprints(newFingerprint, oldFingerprint, oldIsImportedCalendar)
+                oldFingerprint to score
+            }
+            .maxByOrNull { it.second }
+            ?: return null
+
+        return CaptureResolutionOption(
+            card = card,
+            oldFingerprint = bestOld.first,
+            score = bestOld.second,
+            oldIsImportedCalendar = oldIsImportedCalendar,
+            reason = explainDecision(newFingerprint, bestOld.first, oldIsImportedCalendar)
+        )
     }
 
     private fun scoreFingerprints(new: CaptureFingerprint, old: CaptureFingerprint, oldIsImportedCalendar: Boolean): Double {
@@ -45,29 +53,13 @@ class CaptureResolutionEngine {
         val oldDateOverlap = new.oldDateTokens.intersect(old.allDateTokens).isNotEmpty()
         val neutralDateOverlap = new.intent != CaptureIntent.UPDATE && new.allDateTokens.intersect(old.allDateTokens).isNotEmpty()
         val oldHasUnmatchedSpecific = old.specificTokens.isNotEmpty() && !specificOverlap
-        val newAddsSpecificToGenericOld = new.intent != CaptureIntent.UPDATE &&
-            topicOverlap &&
-            new.specificTokens.isNotEmpty() &&
-            old.specificTokens.isEmpty()
-        val genericUpdateWithoutOldObject = new.intent == CaptureIntent.UPDATE &&
-            topicOverlap &&
-            new.specificTokens.isEmpty() &&
-            new.oldDateTokens.isEmpty()
+        val newAddsSpecificToGenericOld = new.intent != CaptureIntent.UPDATE && topicOverlap && new.specificTokens.isNotEmpty() && old.specificTokens.isEmpty()
+        val genericUpdateWithoutOldObject = new.intent == CaptureIntent.UPDATE && topicOverlap && new.specificTokens.isEmpty() && new.oldDateTokens.isEmpty()
 
         var score = tokenScore
-
-        if (topicOverlap && specificOverlap) {
-            score = maxOf(score, if (new.intent == CaptureIntent.UPDATE) 0.86 else 0.82)
-        }
-
-        if (topicOverlap && oldDateOverlap) {
-            score = maxOf(score, if (new.intent == CaptureIntent.UPDATE) 0.90 else 0.76)
-        }
-
-        if (topicOverlap && neutralDateOverlap) {
-            score = maxOf(score, 0.74)
-        }
-
+        if (topicOverlap && specificOverlap) score = maxOf(score, if (new.intent == CaptureIntent.UPDATE) 0.86 else 0.82)
+        if (topicOverlap && oldDateOverlap) score = maxOf(score, if (new.intent == CaptureIntent.UPDATE) 0.90 else 0.76)
+        if (topicOverlap && neutralDateOverlap) score = maxOf(score, 0.74)
         if (new.intent == CaptureIntent.UPDATE && topicOverlap) {
             score = maxOf(score, when {
                 specificOverlap && oldDateOverlap -> 0.93
@@ -77,28 +69,33 @@ class CaptureResolutionEngine {
                 else -> 0.64
             })
         }
-
-        if (topicOverlap && tokenScore >= CONTAINMENT_MATCH_SCORE) {
-            score = maxOf(score, tokenScore)
-        }
-
-        if (new.intent == CaptureIntent.UPDATE && new.oldDateTokens.isNotEmpty() && !oldDateOverlap && oldHasUnmatchedSpecific) {
-            score = minOf(score, 0.58)
-        }
-
-        if (newAddsSpecificToGenericOld) {
-            score = minOf(score, 0.54)
-        }
-
-        if (genericUpdateWithoutOldObject && !specificOverlap && !oldDateOverlap) {
-            score = minOf(score, 0.64)
-        }
-
-        if (oldIsImportedCalendar && new.intent == CaptureIntent.UPDATE && !oldDateOverlap && !specificOverlap) {
-            score = minOf(score, 0.63)
-        }
-
+        if (topicOverlap && tokenScore >= CONTAINMENT_MATCH_SCORE) score = maxOf(score, tokenScore)
+        if (new.intent == CaptureIntent.UPDATE && new.oldDateTokens.isNotEmpty() && !oldDateOverlap && oldHasUnmatchedSpecific) score = minOf(score, 0.58)
+        if (newAddsSpecificToGenericOld) score = minOf(score, 0.54)
+        if (genericUpdateWithoutOldObject && !specificOverlap && !oldDateOverlap) score = minOf(score, 0.64)
+        if (oldIsImportedCalendar && new.intent == CaptureIntent.UPDATE && !oldDateOverlap && !specificOverlap) score = minOf(score, 0.63)
         return score.coerceIn(0.0, 1.0)
+    }
+
+    private fun explainDecision(new: CaptureFingerprint, old: CaptureFingerprint, oldIsImportedCalendar: Boolean): String {
+        val reasons = mutableListOf<String>()
+        val topicOverlap = new.topicTokens.intersect(old.topicTokens)
+        val specificOverlap = new.specificTokens.intersect(old.specificTokens)
+        val oldDateOverlap = new.oldDateTokens.intersect(old.allDateTokens)
+        if (new.intent == CaptureIntent.UPDATE) reasons += "новая фраза похожа на изменение/перенос"
+        if (topicOverlap.isNotEmpty()) reasons += "общая тема: ${topicOverlap.joinToString()}"
+        if (specificOverlap.isNotEmpty()) reasons += "общая конкретика: ${specificOverlap.joinToString()}"
+        if (oldDateOverlap.isNotEmpty()) reasons += "совпала старая дата: ${oldDateOverlap.joinToString()}"
+        if (oldIsImportedCalendar) reasons += "старая карточка похожа на импорт календаря"
+        return if (reasons.isEmpty()) "совпадение по общим словам" else reasons.joinToString("; ")
+    }
+
+    private fun buildDebugText(newFingerprint: CaptureFingerprint, option: CaptureResolutionOption): String {
+        return "Диагностика движка:\n" +
+            "score: ${"%.2f".format(Locale.US, option.score)}\n" +
+            "причина: ${option.reason}\n\n" +
+            newFingerprint.debugBlock("Новая фраза") + "\n\n" +
+            option.oldFingerprint.debugBlock("Существующая карточка")
     }
 
     private fun tokenSimilarity(left: Set<String>, right: Set<String>): Double {
@@ -113,22 +110,16 @@ class CaptureResolutionEngine {
     }
 
     private fun RadarCardEntity.resolutionTexts(): List<String> {
-        return listOf(sourceQuote, title, description, whyText)
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-            .distinct()
+        return listOf(sourceQuote, title, description, whyText).map { it.trim() }.filter { it.isNotBlank() }.distinct()
     }
 
     private fun RadarCardEntity.isImportedCalendarCard(): Boolean {
-        return radarEngineVersion.startsWith("calendar-radar") ||
-            sourceQuote.startsWith("Календарь:", ignoreCase = true)
+        return radarEngineVersion.startsWith("calendar-radar") || sourceQuote.startsWith("Календарь:", ignoreCase = true)
     }
 
     private fun RadarCardEntity.dateTokensFromDueAt(): Set<String> {
         val due = dueAt ?: return emptySet()
-        val dayToken = SimpleDateFormat("EEEE", Locale("ru", "RU"))
-            .format(Date(due))
-            .lowercase(Locale.getDefault())
+        val dayToken = SimpleDateFormat("EEEE", Locale("ru", "RU")).format(Date(due)).lowercase(Locale.getDefault())
         val dayNumberToken = SimpleDateFormat("dd.MM", Locale.getDefault()).format(Date(due))
         return setOfNotNull(normalizeDateToken(dayToken), dayNumberToken)
     }
@@ -139,11 +130,15 @@ class CaptureResolutionEngine {
     }
 }
 
-private enum class CaptureIntent {
-    CREATE,
-    UPDATE,
-    UNKNOWN
-}
+private data class CaptureResolutionOption(
+    val card: RadarCardEntity,
+    val oldFingerprint: CaptureFingerprint,
+    val score: Double,
+    val oldIsImportedCalendar: Boolean,
+    val reason: String
+)
+
+private enum class CaptureIntent { CREATE, UPDATE, UNKNOWN }
 
 private data class CaptureFingerprint(
     val tokens: Set<String>,
@@ -156,6 +151,16 @@ private data class CaptureFingerprint(
     val allDateTokens: Set<String> get() = oldDateTokens + newDateTokens
     val isUseful: Boolean get() = tokens.isNotEmpty() && (topicTokens.isNotEmpty() || tokens.size >= 2)
 
+    fun debugBlock(title: String): String {
+        return "$title:\n" +
+            "- действие: $intent\n" +
+            "- все ключи: ${tokens.formatKeys()}\n" +
+            "- тема: ${topicTokens.formatKeys()}\n" +
+            "- конкретика: ${specificTokens.formatKeys()}\n" +
+            "- старая дата: ${oldDateTokens.formatKeys()}\n" +
+            "- новая дата: ${newDateTokens.formatKeys()}"
+    }
+
     companion object {
         fun from(text: String, extraOldDateTokens: Set<String> = emptySet()): CaptureFingerprint {
             val normalizedText = text.lowercase(Locale.getDefault())
@@ -164,45 +169,23 @@ private data class CaptureFingerprint(
                 .replace(Regex("[^а-яёa-z0-9.]+"), " ")
                 .split(' ')
                 .filter { it.isNotBlank() }
-
             val updateIndex = rawTokens.indexOfFirst { isUpdateWord(it) }
             val intent = when {
                 updateIndex >= 0 -> CaptureIntent.UPDATE
                 CREATE_WORDS.any { it in normalizedText } -> CaptureIntent.CREATE
                 else -> CaptureIntent.UNKNOWN
             }
-
-            val datesWithIndex = rawTokens.mapIndexedNotNull { index, token ->
-                normalizeDateToken(token)?.let { index to it }
-            }
-
+            val datesWithIndex = rawTokens.mapIndexedNotNull { index, token -> normalizeDateToken(token)?.let { index to it } }
             val oldDateTokens = when {
-                intent == CaptureIntent.UPDATE && updateIndex >= 0 -> datesWithIndex
-                    .filter { it.first < updateIndex }
-                    .map { it.second }
-                    .toSet()
+                intent == CaptureIntent.UPDATE && updateIndex >= 0 -> datesWithIndex.filter { it.first < updateIndex }.map { it.second }.toSet()
                 else -> datesWithIndex.map { it.second }.toSet()
             } + extraOldDateTokens
-
             val newDateTokens = if (intent == CaptureIntent.UPDATE && updateIndex >= 0) {
-                datesWithIndex
-                    .filter { it.first > updateIndex }
-                    .map { it.second }
-                    .toSet()
-            } else {
-                emptySet()
-            }
-
-            val tokens = rawTokens
-                .mapNotNull { normalizeToken(it) }
-                .filter { it.length > 2 }
-                .toSet()
-
+                datesWithIndex.filter { it.first > updateIndex }.map { it.second }.toSet()
+            } else emptySet()
+            val tokens = rawTokens.mapNotNull { normalizeToken(it) }.filter { it.length > 2 }.toSet()
             val topicTokens = tokens.filter { it in TOPIC_TOKENS }.toSet()
-            val specificTokens = tokens
-                .filterNot { it in TOPIC_TOKENS }
-                .filterNot { it in GENERIC_TOKENS }
-                .toSet()
+            val specificTokens = tokens.filterNot { it in TOPIC_TOKENS }.filterNot { it in GENERIC_TOKENS }.toSet()
             return CaptureFingerprint(tokens, topicTokens, specificTokens, oldDateTokens, newDateTokens, intent)
         }
 
@@ -229,28 +212,12 @@ private data class CaptureFingerprint(
             }
         }
 
-        private fun isUpdateWord(token: String): Boolean {
-            return UPDATE_WORDS.any { token.startsWith(it) }
-        }
+        private fun isUpdateWord(token: String): Boolean = UPDATE_WORDS.any { token.startsWith(it) }
 
-        private val TOPIC_TOKENS = setOf(
-            "встреч", "созвон", "звон", "куп", "заказ", "запис", "врач", "музей", "работ", "тест"
-        )
-
-        private val GENERIC_TOKENS = setOf(
-            "дело", "событие", "задача", "напоминание", "карточка",
-            "календарь", "контроль", "активный", "средний", "найдено", "описание"
-        )
-
-        private val UPDATE_WORDS = setOf(
-            "перенес", "перенос", "перенести", "измени", "изменить", "поменя", "поменять",
-            "теперь", "вместо", "сдвин", "перестав", "переназнач", "уточн", "исправ"
-        )
-
-        private val CREATE_WORDS = setOf(
-            "создай", "создать", "добавь", "добавить", "запиши", "новая", "новое", "новый"
-        )
-
+        private val TOPIC_TOKENS = setOf("встреч", "созвон", "звон", "куп", "заказ", "запис", "врач", "музей", "работ", "тест")
+        private val GENERIC_TOKENS = setOf("дело", "событие", "задача", "напоминание", "карточка", "календарь", "контроль", "активный", "средний", "найдено", "описание")
+        private val UPDATE_WORDS = setOf("перенес", "перенос", "перенести", "измени", "изменить", "поменя", "поменять", "теперь", "вместо", "сдвин", "перестав", "переназнач", "уточн", "исправ")
+        private val CREATE_WORDS = setOf("создай", "создать", "добавь", "добавить", "запиши", "новая", "новое", "новый")
         private val STOP_WORDS = setOf(
             "это", "этот", "эта", "эту", "как", "для", "что", "чтобы", "или", "уже", "будет", "была", "был", "были",
             "в", "во", "на", "с", "со", "к", "ко", "по", "из", "от", "до", "при", "про", "без", "над", "под",
@@ -266,6 +233,8 @@ private data class CaptureFingerprint(
         )
     }
 }
+
+private fun Set<String>.formatKeys(): String = if (isEmpty()) "—" else joinToString(", ")
 
 private fun normalizeDateToken(rawToken: String): String? {
     val token = rawToken.trim().lowercase(Locale.getDefault())
