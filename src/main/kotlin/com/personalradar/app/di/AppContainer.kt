@@ -38,7 +38,13 @@ class AppContainer private constructor(
             val aiSettingsStore = AiSettingsStore(context)
             val yandexAiClient = YandexAiClient()
             val repository = QuickCaptureRepository(database, aiSettingsStore, yandexAiClient)
-            val controller = CaptureRadarController(context, database, repository)
+            val controller = CaptureRadarController(
+                context = context,
+                database = database,
+                repository = repository,
+                aiSettingsStore = aiSettingsStore,
+                yandexAiClient = yandexAiClient
+            )
             val reminderScheduler = ReminderScheduler(context)
             val calendarRadarImporter = CalendarRadarImporter(database)
             return AppContainer(database, repository, controller, reminderScheduler, aiSettingsStore, yandexAiClient, calendarRadarImporter)
