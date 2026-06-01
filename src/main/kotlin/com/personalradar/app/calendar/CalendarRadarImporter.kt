@@ -15,16 +15,13 @@ class CalendarRadarImporter(
         val radarDao = database.radarCardDao()
         val createdCardIds = mutableListOf<Long>()
         val updatedCardIds = mutableListOf<Long>()
+        val archivedDuplicateCardIds = mutableListOf<Long>()
         var created = 0
         var alreadyKnown = 0
 
         events.forEach { event ->
-            val legacySourceKey = event.stableKey()
             val dedupeKey = event.radarDedupeKey()
-            val identityPrefix = event.sourceIdentityPrefix()
-            val existingCard = radarDao.findNonArchivedCardByDedupeKey(dedupeKey)
-                ?: radarDao.findNonArchivedCardByDedupeKey(legacySourceKey)
-                ?: radarDao.findVisibleCalendarCardByIdentityPattern(identityPrefix + "%")
+            val existingCard = findBestExistingCard(event)
             if (existingCard != null) {
                 val reminderDueAt = event.reminderDueAt()
                 val refreshedCard = existingCard.copy(
@@ -51,6 +48,7 @@ class CalendarRadarImporter(
                     radarDao.bumpDuplicateHitCount(existingCard.id, now)
                     alreadyKnown++
                 }
+                archivedDuplicateCardIds.addAll(archiveDuplicateCardsForEvent(event, existingCard.id, now))
                 return@forEach
             }
 
@@ -112,11 +110,13 @@ class CalendarRadarImporter(
                 )
             )
 
+            archivedDuplicateCardIds.addAll(archiveDuplicateCardsForEvent(event, cardId, now))
             createdCardIds.add(cardId)
             created++
         }
 
         val archivedMissingCardIds = archiveMissingVisibleCalendarCards(events, now)
+        val allArchivedIds = (archivedMissingCardIds + archivedDuplicateCardIds).distinct()
 
         return CalendarImportResult(
             total = events.size,
@@ -128,8 +128,45 @@ class CalendarRadarImporter(
             backgroundCount = events.count { it.controlMode == CalendarControlMode.BACKGROUND },
             createdCardIds = createdCardIds,
             updatedCardIds = updatedCardIds,
-            archivedMissingCardIds = archivedMissingCardIds
+            archivedMissingCardIds = allArchivedIds
         )
+    }
+
+    private suspend fun findBestExistingCard(event: CalendarSourceEvent): RadarCardEntity? {
+        val radarDao = database.radarCardDao()
+        val dedupeKey = event.radarDedupeKey()
+        val legacySourceKey = event.stableKey()
+        val identityPattern = event.sourceIdentityPrefix() + "%"
+        val calendarPattern = event.calendarPattern()
+        val dueAt = event.reminderDueAt() ?: event.beginMillis
+        return radarDao.findNonArchivedCardByDedupeKey(dedupeKey)
+            ?: radarDao.findNonArchivedCardByDedupeKey(legacySourceKey)
+            ?: radarDao.findVisibleCalendarCardByIdentityPattern(identityPattern)
+            ?: radarDao.getVisibleCalendarCardsByCalendarAndDueAt(
+                calendarPattern = calendarPattern,
+                fromMillis = dueAt - LEGACY_MATCH_TOLERANCE_MS,
+                toMillis = dueAt + LEGACY_MATCH_TOLERANCE_MS
+            ).firstOrNull()
+            ?: radarDao.getVisibleCalendarCardsByCalendarAndTitle(
+                calendarPattern = calendarPattern,
+                title = event.cleanTitle()
+            ).firstOrNull()
+    }
+
+    private suspend fun archiveDuplicateCardsForEvent(event: CalendarSourceEvent, keepCardId: Long, now: Long): List<Long> {
+        val radarDao = database.radarCardDao()
+        val identityMatches = radarDao.getVisibleCalendarCardsByIdentityPattern(event.sourceIdentityPrefix() + "%")
+        val sameTimeMatches = radarDao.getVisibleCalendarCardsByCalendarAndDueAt(
+            calendarPattern = event.calendarPattern(),
+            fromMillis = (event.reminderDueAt() ?: event.beginMillis) - LEGACY_MATCH_TOLERANCE_MS,
+            toMillis = (event.reminderDueAt() ?: event.beginMillis) + LEGACY_MATCH_TOLERANCE_MS
+        )
+        val duplicateIds = (identityMatches + sameTimeMatches)
+            .map { it.id }
+            .filter { it != keepCardId }
+            .distinct()
+        if (duplicateIds.isNotEmpty()) radarDao.archiveCards(duplicateIds, now)
+        return duplicateIds
     }
 
     private suspend fun archiveMissingVisibleCalendarCards(events: List<CalendarSourceEvent>, now: Long): List<Long> {
@@ -178,6 +215,7 @@ class CalendarRadarImporter(
 
     companion object {
         private const val CALENDAR_SYNC_WINDOW_TOLERANCE_MS = 5L * 60L * 1000L
+        private const val LEGACY_MATCH_TOLERANCE_MS = 2L * 60L * 60L * 1000L
     }
 }
 
@@ -221,4 +259,8 @@ private fun CalendarSourceEvent.radarDedupeKey(): String {
 
 private fun CalendarSourceEvent.sourceIdentityPrefix(): String {
     return "calendar:$calendarId:$eventId:"
+}
+
+private fun CalendarSourceEvent.calendarPattern(): String {
+    return "calendar:$calendarId:%"
 }
