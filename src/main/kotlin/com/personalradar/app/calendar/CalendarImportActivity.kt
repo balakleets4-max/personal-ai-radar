@@ -117,7 +117,10 @@ class CalendarImportActivity : Activity() {
                 val reader = CalendarSourceReader(applicationContext)
                 val events = reader.readUpcomingEvents(daysAhead = 14, limit = 60)
                 val result = appContainer.calendarRadarImporter.importEvents(events)
-                val scheduledCount = scheduleNewCalendarReminders(appContainer, result)
+                val scheduledCount = scheduleCalendarReminders(appContainer, result.createdCardIds)
+                val rescheduledCount = rescheduleCalendarReminders(appContainer, result.updatedCardIds)
+                cancelRemovedCalendarReminders(appContainer, result.archivedMissingCardIds)
+                CalendarSyncNotifier.notifyCalendarSyncFinished()
                 val previewEvents = events.deduplicatedForPreview()
 
                 withContext(Dispatchers.Main) {
@@ -125,7 +128,7 @@ class CalendarImportActivity : Activity() {
                         status.text = "Ближайших событий календаря не найдено."
                         preview.text = "Создайте тестовое мероприятие в календаре и повторите сканирование. Важно: Google Tasks/Задачи — отдельный источник, они пока не читаются этим календарным модулем."
                     } else {
-                        status.text = buildStatusText(result, scheduledCount, previewEvents.size)
+                        status.text = buildStatusText(result, scheduledCount, rescheduledCount, previewEvents.size)
                         preview.text = previewEvents.take(12).joinToString("\n\n") { event -> event.toPreviewText() }
                     }
                 }
@@ -138,9 +141,9 @@ class CalendarImportActivity : Activity() {
         }
     }
 
-    private suspend fun scheduleNewCalendarReminders(appContainer: AppContainer, result: CalendarImportResult): Int {
+    private suspend fun scheduleCalendarReminders(appContainer: AppContainer, cardIds: List<Long>): Int {
         var scheduled = 0
-        result.createdCardIds.forEach { cardId ->
+        cardIds.forEach { cardId ->
             val card = appContainer.database.radarCardDao().getCardById(cardId) ?: return@forEach
             val scheduleResult = appContainer.reminderScheduler.schedule(card)
             if (scheduleResult is ReminderScheduleResult.Scheduled) scheduled++
@@ -148,10 +151,28 @@ class CalendarImportActivity : Activity() {
         return scheduled
     }
 
-    private fun buildStatusText(result: CalendarImportResult, scheduledCount: Int, previewCount: Int): String {
+    private suspend fun rescheduleCalendarReminders(appContainer: AppContainer, cardIds: List<Long>): Int {
+        var rescheduled = 0
+        cardIds.forEach { cardId ->
+            appContainer.reminderScheduler.cancel(cardId)
+            val card = appContainer.database.radarCardDao().getCardById(cardId) ?: return@forEach
+            val scheduleResult = appContainer.reminderScheduler.schedule(card)
+            if (scheduleResult is ReminderScheduleResult.Scheduled) rescheduled++
+        }
+        return rescheduled
+    }
+
+    private fun cancelRemovedCalendarReminders(appContainer: AppContainer, cardIds: List<Long>) {
+        cardIds.forEach { cardId -> appContainer.reminderScheduler.cancel(cardId) }
+    }
+
+    private fun buildStatusText(result: CalendarImportResult, scheduledCount: Int, rescheduledCount: Int, previewCount: Int): String {
         val mergedDuplicates = (result.total - previewCount).coerceAtLeast(0)
         val mergedText = if (mergedDuplicates > 0) " Объединено дублей: $mergedDuplicates." else ""
-        return "Календарь просканирован. Найдено в календаре: ${result.total}. Показано после объединения: $previewCount.$mergedText Новых карточек: ${result.created}. Уже были в Радаре: ${result.alreadyKnown}. Уведомлений запланировано: $scheduledCount. Активный контроль: ${result.activeCount}. Средний контроль: ${result.mediumCount}."
+        val updatedText = if (result.updatedCardIds.isNotEmpty()) " Обновлено карточек: ${result.updatedCardIds.size}." else ""
+        val removedText = if (result.archivedMissingCardIds.isNotEmpty()) " Убрано удалённых из календаря: ${result.archivedMissingCardIds.size}." else ""
+        val rescheduledText = if (rescheduledCount > 0) " Перепланировано уведомлений: $rescheduledCount." else ""
+        return "Календарь просканирован. Найдено в календаре: ${result.total}. Показано после объединения: $previewCount.$mergedText Новых карточек: ${result.created}. Уже были в Радаре: ${result.alreadyKnown}.$updatedText$removedText Уведомлений запланировано: $scheduledCount.$rescheduledText Активный контроль: ${result.activeCount}. Средний контроль: ${result.mediumCount}."
     }
 
     private fun List<CalendarSourceEvent>.deduplicatedForPreview(): List<CalendarSourceEvent> {
