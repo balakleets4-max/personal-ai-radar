@@ -5,16 +5,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/**
- * Predicts whether a new manual / voice capture is creating something new or changing an existing card.
- *
- * The engine separates the user's action from the object's clues:
- * - action: create / update / move / clarify;
- * - object clues: topic, person/place/details, old date, new date.
- *
- * This runs before a new card is saved and does not trust the type returned by cloud AI, because the
- * same human intent can be classified as CALENDAR, REMINDER, TASK, etc.
- */
 class CaptureResolutionEngine {
     fun findSimilarCapture(
         newText: String,
@@ -54,6 +44,7 @@ class CaptureResolutionEngine {
         val specificOverlap = new.specificTokens.intersect(old.specificTokens).isNotEmpty()
         val oldDateOverlap = new.oldDateTokens.intersect(old.allDateTokens).isNotEmpty()
         val neutralDateOverlap = new.intent != CaptureIntent.UPDATE && new.allDateTokens.intersect(old.allDateTokens).isNotEmpty()
+        val oldHasUnmatchedSpecific = old.specificTokens.isNotEmpty() && !specificOverlap
         val newAddsSpecificToGenericOld = new.intent != CaptureIntent.UPDATE &&
             topicOverlap &&
             new.specificTokens.isNotEmpty() &&
@@ -69,9 +60,6 @@ class CaptureResolutionEngine {
             score = maxOf(score, if (new.intent == CaptureIntent.UPDATE) 0.86 else 0.82)
         }
 
-        // In an update phrase, a date before the update signal usually points to the old object:
-        // “встреча в понедельник перенеслась на субботу” -> old object is the Monday meeting.
-        // A date after the update signal is the new target date and should not by itself select an old card.
         if (topicOverlap && oldDateOverlap) {
             score = maxOf(score, if (new.intent == CaptureIntent.UPDATE) 0.90 else 0.76)
         }
@@ -94,22 +82,18 @@ class CaptureResolutionEngine {
             score = maxOf(score, tokenScore)
         }
 
-        // Life-context rule: “встреча с мэром” after a generic “встреча” is usually a new,
-        // more specific event, not an update. If the user really wants to change the old card,
-        // they normally says “перенеси/измени/уточни”.
+        if (new.intent == CaptureIntent.UPDATE && new.oldDateTokens.isNotEmpty() && !oldDateOverlap && oldHasUnmatchedSpecific) {
+            score = minOf(score, 0.58)
+        }
+
         if (newAddsSpecificToGenericOld) {
             score = minOf(score, 0.54)
         }
 
-        // A bare “встреча перенеслась на пятницу” is an update action, but it does not name the
-        // old object. Do not let containment alone confidently attach it to the newest meeting.
-        // It may still surface as a cautious candidate if there is no better context.
         if (genericUpdateWithoutOldObject && !specificOverlap && !oldDateOverlap) {
             score = minOf(score, 0.64)
         }
 
-        // Imported calendar cards can be corrected manually, but only when the text gives enough context.
-        // Otherwise a generic “встреча перенеслась” must not attach to a random calendar event.
         if (oldIsImportedCalendar && new.intent == CaptureIntent.UPDATE && !oldDateOverlap && !specificOverlap) {
             score = minOf(score, 0.63)
         }
@@ -254,7 +238,8 @@ private data class CaptureFingerprint(
         )
 
         private val GENERIC_TOKENS = setOf(
-            "дело", "событие", "задача", "напоминание", "карточка"
+            "дело", "событие", "задача", "напоминание", "карточка",
+            "календарь", "контроль", "активный", "средний", "найдено", "описание"
         )
 
         private val UPDATE_WORDS = setOf(
@@ -276,7 +261,8 @@ private data class CaptureFingerprint(
             "восемь", "девять", "десять", "одиннадцать", "двенадцать", "тринадцать", "четырнадцать", "пятнадцать",
             "шестнадцать", "семнадцать", "восемнадцать", "девятнадцать", "двадцать", "тридцать", "сорок", "пятьдесят",
             "час", "часа", "часов", "минут", "минута", "минуты",
-            "причина", "локальная", "проверка", "действие", "тип", "язык", "когда", "ии", "yandex"
+            "причина", "локальная", "проверка", "действие", "тип", "язык", "когда", "ии", "yandex",
+            "календарь", "контроль", "активный", "средний", "найдено", "описание"
         )
     }
 }
