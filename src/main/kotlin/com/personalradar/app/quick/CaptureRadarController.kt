@@ -46,8 +46,7 @@ class CaptureRadarController(
             .getActiveCardsSnapshot()
             .filterNot { it.isImportedCalendarCard() }
             .mapNotNull { card ->
-                val cardKey = bestManualCardKey(card)
-                val score = similarityScore(newKey, cardKey)
+                val score = bestSimilarityScore(newKey, card)
                 if (score >= MANUAL_DUPLICATE_SCORE_THRESHOLD) card to score else null
             }
             .maxByOrNull { it.second }
@@ -146,6 +145,20 @@ class CaptureRadarController(
         )
     }
 
+    private fun bestSimilarityScore(newKey: String, card: RadarCardEntity): Double {
+        return cardManualKeys(card)
+            .map { similarityScore(newKey, it) }
+            .maxOrNull()
+            ?: 0.0
+    }
+
+    private fun cardManualKeys(card: RadarCardEntity): List<String> {
+        return listOf(card.sourceQuote, card.title, card.description, card.whyText)
+            .map { manualSemanticKey(it) }
+            .filter { it.isNotBlank() }
+            .distinct()
+    }
+
     private fun similarityScore(left: String, right: String): Double {
         if (left.isBlank() || right.isBlank()) return 0.0
         if (left == right) return 1.0
@@ -154,15 +167,10 @@ class CaptureRadarController(
         if (leftTokens.isEmpty() || rightTokens.isEmpty()) return 0.0
         val overlap = leftTokens.intersect(rightTokens).size.toDouble()
         val union = leftTokens.union(rightTokens).size.toDouble()
-        return overlap / union
-    }
-
-    private fun bestManualCardKey(card: RadarCardEntity): String {
-        return listOf(card.sourceQuote, card.title, card.description)
-            .map { manualSemanticKey(it) }
-            .filter { it.isNotBlank() }
-            .maxByOrNull { it.length }
-            .orEmpty()
+        if (overlap <= 0.0) return 0.0
+        val containment = maxOf(overlap / leftTokens.size.toDouble(), overlap / rightTokens.size.toDouble())
+        val jaccard = overlap / union
+        return maxOf(jaccard, containment * 0.92)
     }
 
     private fun RadarCardEntity.isImportedCalendarCard(): Boolean {
@@ -176,7 +184,7 @@ class CaptureRadarController(
             .replace(Regex("\\b\\d+\\b"), " ")
             .replace(Regex("\\b(ноль|нуль|один|одна|одно|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|одиннадцать|двенадцать|тринадцать|четырнадцать|пятнадцать|шестнадцать|семнадцать|восемнадцать|девятнадцать|двадцать|тридцать|сорок|пятьдесят|час|часа|часов|минут|минута|минуты)\\b"), " ")
             .replace(Regex("\\b(сегодня|завтра|послезавтра|понедельник|понедельника|вторник|вторника|среда|среду|четверг|четверга|пятница|пятницу|суббота|субботу|воскресенье|воскресенья)\\b"), " ")
-            .replace(Regex("\\b(утром|днём|днем|вечером|ночью|время|было|поставлено|поставить|назначил|назначить|напомни|напомнить|мне|пожалуйста|надо|нужно|задача|напоминание|риск|мысль|там|еще|ещё|снова)\\b"), " ")
+            .replace(Regex("\\b(утром|днём|днем|вечером|ночью|время|было|поставлено|поставить|назначил|назначить|напомни|напомнить|мне|пожалуйста|надо|нужно|задача|напоминание|риск|мысль|там|еще|ещё|снова|сегодня|завтра)\\b"), " ")
             .replace(Regex("[^а-яёa-z0-9]+"), " ")
             .split(' ')
             .mapNotNull { token -> normalizeManualToken(token) }
@@ -189,6 +197,7 @@ class CaptureRadarController(
         if (token.isBlank()) return null
         return when {
             token.startsWith("встреч") -> "встреч"
+            token.startsWith("встрет") -> "встреч"
             token.startsWith("созвон") -> "созвон"
             token.startsWith("звон") || token.startsWith("позвон") -> "звон"
             token.startsWith("куп") -> "куп"
@@ -207,7 +216,8 @@ class CaptureRadarController(
         private const val MANUAL_DUPLICATE_SCORE_THRESHOLD = 0.62
         private val MANUAL_STOP_WORDS = setOf(
             "это", "этот", "эта", "эту", "как", "для", "что", "чтобы", "или", "уже", "будет", "была", "был", "были",
-            "в", "во", "на", "с", "со", "к", "ко", "по", "из", "от", "до", "при", "про", "без", "над", "под"
+            "в", "во", "на", "с", "со", "к", "ко", "по", "из", "от", "до", "при", "про", "без", "над", "под",
+            "необходимо", "присутствовать", "причина", "локальная", "проверка", "действие", "тип", "язык", "когда"
         )
     }
 }
