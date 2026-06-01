@@ -22,7 +22,8 @@ class CalendarSyncRunner(
             limit = limit
         )
         val result = appContainer.calendarRadarImporter.importEvents(events)
-        scheduleCreatedCards(appContainer, result)
+        scheduleReminderAlarms(appContainer, result.createdCardIds)
+        rescheduleReminderAlarms(appContainer, result.updatedCardIds)
         removeReminderAlarmsForMissingCards(appContainer, result)
         CalendarSyncNotifier.notifyCalendarSyncFinished()
         result
@@ -35,8 +36,16 @@ class CalendarSyncRunner(
         ) == PackageManager.PERMISSION_GRANTED
     }
 
-    private suspend fun scheduleCreatedCards(appContainer: AppContainer, result: CalendarImportResult) {
-        result.createdCardIds.forEach { cardId ->
+    private suspend fun scheduleReminderAlarms(appContainer: AppContainer, cardIds: List<Long>) {
+        cardIds.forEach { cardId ->
+            val card = appContainer.database.radarCardDao().getCardById(cardId) ?: return@forEach
+            appContainer.reminderScheduler.schedule(card) as? ReminderScheduleResult.Scheduled
+        }
+    }
+
+    private suspend fun rescheduleReminderAlarms(appContainer: AppContainer, cardIds: List<Long>) {
+        cardIds.forEach { cardId ->
+            appContainer.reminderScheduler.cancel(cardId)
             val card = appContainer.database.radarCardDao().getCardById(cardId) ?: return@forEach
             appContainer.reminderScheduler.schedule(card) as? ReminderScheduleResult.Scheduled
         }
