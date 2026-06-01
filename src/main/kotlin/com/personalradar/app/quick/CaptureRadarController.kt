@@ -147,7 +147,12 @@ data class RadarCounters(val active: Int, val hidden: Int, val done: Int)
 
 data class RadarSnapshot(val cards: List<RadarCardEntity>, val counters: RadarCounters)
 
-data class ManualDuplicateCandidate(val existingCard: RadarCardEntity, val existingText: String, val newText: String)
+data class ManualDuplicateCandidate(
+    val existingCard: RadarCardEntity,
+    val existingText: String,
+    val newText: String,
+    val debugText: String = ""
+)
 
 data class CaptureRadarScreenState(
     val message: String,
