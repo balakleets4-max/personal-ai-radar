@@ -44,7 +44,7 @@ class CaptureRadarController(
         if (newKey.length < 4) return null
         val best = database.radarCardDao()
             .getActiveCardsSnapshot()
-            .filter { it.type != "CALENDAR" }
+            .filterNot { it.isImportedCalendarCard() }
             .mapNotNull { card ->
                 val cardKey = bestManualCardKey(card)
                 val score = similarityScore(newKey, cardKey)
@@ -163,6 +163,10 @@ class CaptureRadarController(
             .filter { it.isNotBlank() }
             .maxByOrNull { it.length }
             .orEmpty()
+    }
+
+    private fun RadarCardEntity.isImportedCalendarCard(): Boolean {
+        return radarEngineVersion.startsWith("calendar-radar") || sourceQuote.startsWith("Календарь:", ignoreCase = true)
     }
 
     private fun manualSemanticKey(text: String): String {
