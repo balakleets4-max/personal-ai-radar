@@ -16,17 +16,43 @@ class CalendarRadarImporter(
         val now = System.currentTimeMillis()
         val radarDao = database.radarCardDao()
         val createdCardIds = mutableListOf<Long>()
+        val updatedCardIds = mutableListOf<Long>()
         var created = 0
         var alreadyKnown = 0
 
         events.forEach { event ->
             val sourceKey = event.stableKey()
             val dedupeKey = event.radarDedupeKey()
+            val identityPrefix = event.sourceIdentityPrefix()
             val existingCard = radarDao.findNonArchivedCardByDedupeKey(dedupeKey)
                 ?: radarDao.findNonArchivedCardByDedupeKey(sourceKey)
+                ?: radarDao.findVisibleCalendarCardByIdentityPattern(identityPrefix + "%")
             if (existingCard != null) {
-                radarDao.bumpDuplicateHitCount(existingCard.id, now)
-                alreadyKnown++
+                val reminderDueAt = event.reminderDueAt()
+                val refreshedCard = existingCard.copy(
+                    title = event.cleanTitle(),
+                    description = buildDescription(event),
+                    whyText = buildWhyText(event),
+                    sourceQuote = event.toRadarCaptureText().take(180),
+                    priority = event.controlMode.priority,
+                    dueAt = reminderDueAt,
+                    updatedAt = now,
+                    dedupeKey = dedupeKey,
+                    hasReminder = true
+                )
+                val changed = existingCard.title != refreshedCard.title ||
+                    existingCard.description != refreshedCard.description ||
+                    existingCard.whyText != refreshedCard.whyText ||
+                    existingCard.priority != refreshedCard.priority ||
+                    existingCard.dueAt != refreshedCard.dueAt ||
+                    existingCard.dedupeKey != refreshedCard.dedupeKey
+                if (changed) {
+                    radarDao.updateRadarCard(refreshedCard)
+                    updatedCardIds.add(existingCard.id)
+                } else {
+                    radarDao.bumpDuplicateHitCount(existingCard.id, now)
+                    alreadyKnown++
+                }
                 return@forEach
             }
 
@@ -103,6 +129,7 @@ class CalendarRadarImporter(
             weakCount = events.count { it.controlMode == CalendarControlMode.WEAK },
             backgroundCount = events.count { it.controlMode == CalendarControlMode.BACKGROUND },
             createdCardIds = createdCardIds,
+            updatedCardIds = updatedCardIds,
             archivedMissingCardIds = archivedMissingCardIds
         )
     }
@@ -112,11 +139,15 @@ class CalendarRadarImporter(
         val minDueAt = events.minOf { it.reminderDueAt() ?: it.beginMillis }
         val maxDueAt = events.maxOf { it.reminderDueAt() ?: it.beginMillis }
         val sourceKeys = events.flatMap { event -> listOf(event.stableKey(), event.radarDedupeKey()) }.toSet()
+        val sourcePrefixes = events.map { event -> event.sourceIdentityPrefix() }
         val visibleCards = database.radarCardDao().getVisibleCalendarCardsInWindow(
             fromMillis = minDueAt - CALENDAR_SYNC_WINDOW_TOLERANCE_MS,
             toMillis = maxDueAt + CALENDAR_SYNC_WINDOW_TOLERANCE_MS
         )
-        val missingCards = visibleCards.filter { card -> card.dedupeKey !in sourceKeys }
+        val missingCards = visibleCards.filter { card ->
+            val key = card.dedupeKey.orEmpty()
+            key !in sourceKeys && sourcePrefixes.none { prefix -> key.startsWith(prefix) }
+        }
         if (missingCards.isEmpty()) return emptyList()
         val missingCardIds = missingCards.map { it.id }
         database.radarCardDao().archiveCards(missingCardIds, now)
@@ -161,6 +192,7 @@ data class CalendarImportResult(
     val weakCount: Int,
     val backgroundCount: Int,
     val createdCardIds: List<Long>,
+    val updatedCardIds: List<Long> = emptyList(),
     val archivedMissingCardIds: List<Long> = emptyList()
 )
 
@@ -194,4 +226,8 @@ private fun CalendarSourceEvent.radarDedupeKey(): String {
         .ifBlank { "event" }
     val dayKey = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date(beginMillis))
     return "calendar-semantic:all-day:$normalizedTitle:$dayKey"
+}
+
+private fun CalendarSourceEvent.sourceIdentityPrefix(): String {
+    return "calendar:$calendarId:$eventId:"
 }
