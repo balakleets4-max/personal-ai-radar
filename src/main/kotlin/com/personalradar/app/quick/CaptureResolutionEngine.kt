@@ -16,11 +16,13 @@ class CaptureResolutionEngine {
             .maxWithOrNull(compareBy<CaptureResolutionOption> { it.score }.thenBy { it.card.updatedAt })
             ?: return null
 
+        val debugText = buildDebugText(newFingerprint, best)
+        val existingText = best.card.sourceQuote.ifBlank { best.card.title } + "\n\n" + debugText
         return ManualDuplicateCandidate(
             existingCard = best.card,
-            existingText = best.card.sourceQuote.ifBlank { best.card.title },
+            existingText = existingText,
             newText = newText.trim(),
-            debugText = buildDebugText(newFingerprint, best)
+            debugText = debugText
         )
     }
 
