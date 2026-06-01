@@ -46,7 +46,7 @@ class CaptureRadarController(
             .getActiveCardsSnapshot()
             .filter { it.type != "CALENDAR" }
             .mapNotNull { card ->
-                val cardKey = manualSemanticKey(card.sourceQuote.ifBlank { card.title })
+                val cardKey = bestManualCardKey(card)
                 val score = similarityScore(newKey, cardKey)
                 if (score >= MANUAL_DUPLICATE_SCORE_THRESHOLD) card to score else null
             }
@@ -157,19 +157,54 @@ class CaptureRadarController(
         return overlap / union
     }
 
+    private fun bestManualCardKey(card: RadarCardEntity): String {
+        return listOf(card.sourceQuote, card.title, card.description)
+            .map { manualSemanticKey(it) }
+            .filter { it.isNotBlank() }
+            .maxByOrNull { it.length }
+            .orEmpty()
+    }
+
     private fun manualSemanticKey(text: String): String {
         return text
             .lowercase(Locale.getDefault())
             .replace(Regex("\\b\\d{1,2}[:.]\\d{2}\\b"), " ")
+            .replace(Regex("\\b\\d+\\b"), " ")
+            .replace(Regex("\\b(ноль|нуль|один|одна|одно|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|одиннадцать|двенадцать|тринадцать|четырнадцать|пятнадцать|шестнадцать|семнадцать|восемнадцать|девятнадцать|двадцать|тридцать|сорок|пятьдесят|час|часа|часов|минут|минута|минуты)\\b"), " ")
             .replace(Regex("\\b(сегодня|завтра|послезавтра|понедельник|понедельника|вторник|вторника|среда|среду|четверг|четверга|пятница|пятницу|суббота|субботу|воскресенье|воскресенья)\\b"), " ")
-            .replace(Regex("\\b(утром|днём|днем|вечером|ночью|время|было|поставлено|поставить|напомни|напомнить|мне|пожалуйста|надо|нужно|задача|напоминание|риск|мысль)\\b"), " ")
+            .replace(Regex("\\b(утром|днём|днем|вечером|ночью|время|было|поставлено|поставить|назначил|назначить|напомни|напомнить|мне|пожалуйста|надо|нужно|задача|напоминание|риск|мысль|там|еще|ещё|снова)\\b"), " ")
             .replace(Regex("[^а-яёa-z0-9]+"), " ")
-            .replace(Regex("\\s+"), " ")
+            .split(' ')
+            .mapNotNull { token -> normalizeManualToken(token) }
+            .filter { it.length > 2 }
+            .joinToString(" ")
             .trim()
+    }
+
+    private fun normalizeManualToken(token: String): String? {
+        if (token.isBlank()) return null
+        return when {
+            token.startsWith("встреч") -> "встреч"
+            token.startsWith("созвон") -> "созвон"
+            token.startsWith("звон") || token.startsWith("позвон") -> "звон"
+            token.startsWith("куп") -> "куп"
+            token.startsWith("заказ") || token.startsWith("закаж") -> "заказ"
+            token.startsWith("запис") -> "запис"
+            token.startsWith("врач") || token.startsWith("доктор") -> "врач"
+            token.startsWith("музе") -> "музей"
+            token.startsWith("работ") -> "работ"
+            token.startsWith("тест") -> "тест"
+            token in MANUAL_STOP_WORDS -> null
+            else -> token
+        }
     }
 
     companion object {
         private const val MANUAL_DUPLICATE_SCORE_THRESHOLD = 0.62
+        private val MANUAL_STOP_WORDS = setOf(
+            "это", "этот", "эта", "эту", "как", "для", "что", "чтобы", "или", "уже", "будет", "была", "был", "были",
+            "в", "во", "на", "с", "со", "к", "ко", "по", "из", "от", "до", "при", "про", "без", "над", "под"
+        )
     }
 }
 
