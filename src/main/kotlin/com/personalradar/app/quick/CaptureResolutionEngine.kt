@@ -57,6 +57,14 @@ class CaptureResolutionEngine {
         val oldHasUnmatchedSpecific = old.specificTokens.isNotEmpty() && !specificOverlap
         val newAddsSpecificToGenericOld = new.intent != CaptureIntent.UPDATE && topicOverlap && new.specificTokens.isNotEmpty() && old.specificTokens.isEmpty()
         val genericUpdateWithoutOldObject = new.intent == CaptureIntent.UPDATE && topicOverlap && new.specificTokens.isEmpty() && new.oldDateTokens.isEmpty()
+        val newIsBareGenericTopic = new.intent != CaptureIntent.UPDATE &&
+            new.specificTokens.isEmpty() &&
+            new.allDateTokens.isEmpty() &&
+            new.tokens == new.topicTokens
+
+        // “Встреча” by itself is too vague. It must create a new capture, not attach to a random
+        // calendar event or the newest old card only because both contain the word “встреча”.
+        if (newIsBareGenericTopic) return 0.0
 
         var score = tokenScore
         if (topicOverlap && specificOverlap) score = maxOf(score, if (new.intent == CaptureIntent.UPDATE) 0.86 else 0.82)
@@ -74,8 +82,14 @@ class CaptureResolutionEngine {
         if (topicOverlap && tokenScore >= CONTAINMENT_MATCH_SCORE) score = maxOf(score, tokenScore)
         if (new.intent == CaptureIntent.UPDATE && new.oldDateTokens.isNotEmpty() && !oldDateOverlap && oldHasUnmatchedSpecific) score = minOf(score, 0.58)
         if (newAddsSpecificToGenericOld) score = minOf(score, 0.54)
-        if (genericUpdateWithoutOldObject && !specificOverlap && !oldDateOverlap) score = minOf(score, 0.64)
-        if (oldIsImportedCalendar && new.intent == CaptureIntent.UPDATE && !oldDateOverlap && !specificOverlap) score = minOf(score, 0.63)
+
+        // “Встреча изменилась на субботу” tells us a new target date, but not which old meeting
+        // changed. Do not attach it to “встреча с мэром” or to an imported calendar event just by topic.
+        if (genericUpdateWithoutOldObject && !specificOverlap && !oldDateOverlap) {
+            score = minOf(score, if (old.specificTokens.isEmpty() && !oldIsImportedCalendar && old.allDateTokens.isEmpty()) 0.64 else 0.58)
+        }
+
+        if (oldIsImportedCalendar && new.intent == CaptureIntent.UPDATE && !oldDateOverlap && !specificOverlap) score = minOf(score, 0.58)
         return score.coerceIn(0.0, 1.0)
     }
 
