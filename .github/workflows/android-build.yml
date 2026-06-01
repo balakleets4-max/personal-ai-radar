@@ -27,6 +27,8 @@ jobs:
           gradle-version: 8.10.2
 
       - name: Build debug APK
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: gradle -Pandroid.useAndroidX=true -Pandroid.nonTransitiveRClass=true assembleDebug --stacktrace
 
       - name: Upload debug APK
