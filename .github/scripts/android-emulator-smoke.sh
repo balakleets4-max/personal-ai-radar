@@ -19,12 +19,15 @@ adb logcat -d > smoke-results/logcat.txt || true
 
 if [ ! -s smoke-results/app.pid ]; then
   echo "App process is not running after launch" | tee smoke-results/failure.txt
-  grep -E "FATAL EXCEPTION|AndroidRuntime|Process: com\.personalradar\.app|Exception|Error" smoke-results/logcat.txt > smoke-results/crash-snippet.txt || true
+  grep -E "FATAL EXCEPTION|Process: com\.personalradar\.app|CRASH: com\.personalradar\.app|Exception|Error" smoke-results/logcat.txt > smoke-results/crash-snippet.txt || true
   exit 1
 fi
 
-if grep -E "FATAL EXCEPTION|AndroidRuntime|Process: com\.personalradar\.app" smoke-results/logcat.txt > smoke-results/crash-snippet.txt; then
-  echo "Crash-like AndroidRuntime entries found in logcat" | tee -a smoke-results/failure.txt
+# Do not treat generic AndroidRuntime entries as crashes: the monkey launcher itself logs
+# AndroidRuntime lines even when the app starts normally. Fail only on app-specific crash
+# signatures.
+if grep -E "FATAL EXCEPTION|Process: com\.personalradar\.app|CRASH: com\.personalradar\.app" smoke-results/logcat.txt > smoke-results/crash-snippet.txt; then
+  echo "App-specific crash signature found in logcat" | tee -a smoke-results/failure.txt
   exit 1
 fi
 
