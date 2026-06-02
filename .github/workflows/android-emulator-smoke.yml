@@ -1,0 +1,110 @@
+name: Android Emulator Smoke Test
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  workflow_dispatch:
+
+concurrency:
+  group: android-emulator-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  emulator-smoke:
+    name: Build, install and launch on emulator
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.10.2
+
+      - name: Restore Firebase config
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > google-services.json
+          else
+            echo "GOOGLE_SERVICES_JSON secret is not set"
+            exit 1
+          fi
+
+      - name: Build debug APK
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        run: gradle -Pandroid.useAndroidX=true -Pandroid.nonTransitiveRClass=true assembleDebug --stacktrace
+
+      - name: Locate APK
+        run: |
+          APK_PATH="$(find build/outputs/apk/debug -name '*debug*.apk' ! -name '*androidTest*' | head -n 1)"
+          if [ -z "$APK_PATH" ]; then
+            echo "Debug APK not found"
+            exit 1
+          fi
+          echo "APK_PATH=$APK_PATH" >> "$GITHUB_ENV"
+          echo "Using APK: $APK_PATH"
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: personal-ai-radar-debug-apk
+          path: ${{ env.APK_PATH }}
+          if-no-files-found: error
+
+      - name: Run emulator smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: default
+          arch: x86_64
+          profile: medium_phone
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            mkdir -p smoke-results
+            adb logcat -c
+            adb install -r "$APK_PATH"
+            adb shell monkey -p com.personalradar.app -c android.intent.category.LAUNCHER 1
+            sleep 8
+            adb shell pidof com.personalradar.app > smoke-results/app.pid || true
+            adb shell screencap -p /sdcard/smoke-screenshot.png || true
+            adb pull /sdcard/smoke-screenshot.png smoke-results/smoke-screenshot.png || true
+            adb logcat -d > smoke-results/logcat.txt || true
+            if [ ! -s smoke-results/app.pid ]; then
+              echo "App process is not running after launch" | tee smoke-results/failure.txt
+              exit 1
+            fi
+            if grep -E "FATAL EXCEPTION|AndroidRuntime|Process: com\.personalradar\.app" smoke-results/logcat.txt > smoke-results/crash-snippet.txt; then
+              echo "Crash-like AndroidRuntime entries found in logcat" | tee -a smoke-results/failure.txt
+              exit 1
+            fi
+            echo "Smoke test passed: app installed, launched and process is running." | tee smoke-results/summary.txt
+
+      - name: Upload smoke test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-emulator-smoke-results
+          path: smoke-results
+          if-no-files-found: warn
