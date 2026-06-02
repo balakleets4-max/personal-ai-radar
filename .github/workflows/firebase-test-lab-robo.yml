@@ -95,14 +95,14 @@ jobs:
           mkdir -p test-results/firebase-test-lab
           echo "commit=$GITHUB_SHA" > test-results/firebase-test-lab/summary.txt
           echo "apk=$APK_PATH" >> test-results/firebase-test-lab/summary.txt
-          echo "device=Pixel2, Android 30, ru, portrait" >> test-results/firebase-test-lab/summary.txt
+          echo "device=NexusLowRes, Android 30, ru, portrait" >> test-results/firebase-test-lab/summary.txt
           echo "timeout=120s" >> test-results/firebase-test-lab/summary.txt
           gcloud config set project "$FIREBASE_TEST_LAB_PROJECT_ID"
           set +e
           gcloud firebase test android run \
             --type robo \
             --app "$APK_PATH" \
-            --device model=Pixel2,version=30,locale=ru,orientation=portrait \
+            --device model=NexusLowRes,version=30,locale=ru,orientation=portrait \
             --timeout 120s \
             --client-details matrixLabel="AI Radar Robo ${GITHUB_SHA::7}" \
             --verbosity=info 2>&1 | tee test-results/firebase-test-lab/gcloud-output.log
