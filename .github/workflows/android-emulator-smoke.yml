@@ -75,24 +75,28 @@ jobs:
       - name: Run emulator smoke test
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
-          target: default
+          api-level: 30
+          target: google_apis
           arch: x86_64
-          profile: medium_phone
+          profile: pixel_2
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: |
             mkdir -p smoke-results
+            echo "apk=$APK_PATH" > smoke-results/environment.txt
+            adb devices -l | tee -a smoke-results/environment.txt
+            adb shell getprop ro.build.version.sdk | tee -a smoke-results/environment.txt
             adb logcat -c
             adb install -r "$APK_PATH"
             adb shell monkey -p com.personalradar.app -c android.intent.category.LAUNCHER 1
-            sleep 8
+            sleep 12
             adb shell pidof com.personalradar.app > smoke-results/app.pid || true
             adb shell screencap -p /sdcard/smoke-screenshot.png || true
             adb pull /sdcard/smoke-screenshot.png smoke-results/smoke-screenshot.png || true
             adb logcat -d > smoke-results/logcat.txt || true
             if [ ! -s smoke-results/app.pid ]; then
               echo "App process is not running after launch" | tee smoke-results/failure.txt
+              grep -E "FATAL EXCEPTION|AndroidRuntime|Process: com\.personalradar\.app|Exception|Error" smoke-results/logcat.txt > smoke-results/crash-snippet.txt || true
               exit 1
             fi
             if grep -E "FATAL EXCEPTION|AndroidRuntime|Process: com\.personalradar\.app" smoke-results/logcat.txt > smoke-results/crash-snippet.txt; then
