@@ -88,6 +88,97 @@ jobs:
       - name: Set up Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v3
 
+      - name: Select Firebase Test Lab device
+        env:
+          FIREBASE_TEST_LAB_PROJECT_ID: ${{ secrets.FIREBASE_TEST_LAB_PROJECT_ID }}
+        run: |
+          mkdir -p test-results/firebase-test-lab
+          gcloud config set project "$FIREBASE_TEST_LAB_PROJECT_ID"
+          gcloud firebase test android models list --format=json > test-results/firebase-test-lab/models.json
+          python3 <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          models_path = Path("test-results/firebase-test-lab/models.json")
+          models = json.loads(models_path.read_text(encoding="utf-8"))
+
+          def model_id(model):
+              return str(model.get("id") or model.get("modelId") or "")
+
+          def model_form(model):
+              return str(model.get("form") or "").upper()
+
+          def model_versions(model):
+              versions = model.get("supportedVersionIds") or model.get("supportedVersionIds[]") or []
+              return [str(version) for version in versions]
+
+          preferred_versions = ["35", "34", "33", "32", "31", "30", "29", "28", "27", "26"]
+          preferred_model_ids = [
+              "MediumPhone.arm",
+              "MediumPhone",
+              "SmallPhone.arm",
+              "SmallPhone",
+              "Pixel2",
+              "NexusLowRes",
+          ]
+
+          virtual_models = [model for model in models if "VIRTUAL" in model_form(model)]
+          candidates = virtual_models or models
+
+          selected = None
+          selected_version = None
+
+          for preferred_id in preferred_model_ids:
+              for model in candidates:
+                  if model_id(model) == preferred_id:
+                      versions = model_versions(model)
+                      for version in preferred_versions:
+                          if version in versions:
+                              selected = model
+                              selected_version = version
+                              break
+                      if selected:
+                          break
+              if selected:
+                  break
+
+          if not selected:
+              for model in candidates:
+                  versions = model_versions(model)
+                  for version in preferred_versions:
+                      if version in versions:
+                          selected = model
+                          selected_version = version
+                          break
+                  if selected:
+                      break
+
+          if not selected and candidates:
+              selected = candidates[0]
+              versions = model_versions(selected)
+              selected_version = versions[-1] if versions else ""
+
+          if not selected or not selected_version:
+              raise SystemExit("No usable Firebase Test Lab Android model/version found. See models.json artifact.")
+
+          summary = Path("test-results/firebase-test-lab/selected-device.txt")
+          summary.write_text(
+              f"model={model_id(selected)}\n"
+              f"version={selected_version}\n"
+              f"form={model_form(selected)}\n"
+              f"name={selected.get('name', '')}\n",
+              encoding="utf-8",
+          )
+
+          github_env = Path(os.environ["GITHUB_ENV"])
+          with github_env.open("a", encoding="utf-8") as env_file:
+              env_file.write(f"FTL_MODEL={model_id(selected)}\n")
+              env_file.write(f"FTL_VERSION={selected_version}\n")
+
+          print(summary.read_text(encoding="utf-8"))
+          PY
+
       - name: Run Firebase Test Lab Robo test
         env:
           FIREBASE_TEST_LAB_PROJECT_ID: ${{ secrets.FIREBASE_TEST_LAB_PROJECT_ID }}
@@ -95,14 +186,14 @@ jobs:
           mkdir -p test-results/firebase-test-lab
           echo "commit=$GITHUB_SHA" > test-results/firebase-test-lab/summary.txt
           echo "apk=$APK_PATH" >> test-results/firebase-test-lab/summary.txt
-          echo "device=NexusLowRes, Android 30, ru, portrait" >> test-results/firebase-test-lab/summary.txt
+          echo "device=$FTL_MODEL, Android $FTL_VERSION, ru, portrait" >> test-results/firebase-test-lab/summary.txt
           echo "timeout=120s" >> test-results/firebase-test-lab/summary.txt
           gcloud config set project "$FIREBASE_TEST_LAB_PROJECT_ID"
           set +e
           gcloud firebase test android run \
             --type robo \
             --app "$APK_PATH" \
-            --device model=NexusLowRes,version=30,locale=ru,orientation=portrait \
+            --device model="$FTL_MODEL",version="$FTL_VERSION",locale=ru,orientation=portrait \
             --timeout 120s \
             --client-details matrixLabel="AI Radar Robo ${GITHUB_SHA::7}" \
             --verbosity=info 2>&1 | tee test-results/firebase-test-lab/gcloud-output.log
