@@ -1,0 +1,102 @@
+name: Firebase Test Lab Robo
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  workflow_dispatch:
+
+concurrency:
+  group: firebase-test-lab-robo-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  robo-test:
+    name: Build and run Robo test
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.10.2
+
+      - name: Restore Firebase config
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > google-services.json
+          else
+            echo "GOOGLE_SERVICES_JSON secret is not set"
+            exit 1
+          fi
+
+      - name: Validate Firebase Test Lab secrets
+        env:
+          FIREBASE_TEST_LAB_PROJECT_ID: ${{ secrets.FIREBASE_TEST_LAB_PROJECT_ID }}
+          GCP_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
+        run: |
+          if [ -z "$FIREBASE_TEST_LAB_PROJECT_ID" ]; then
+            echo "FIREBASE_TEST_LAB_PROJECT_ID secret is not set"
+            exit 1
+          fi
+          if [ -z "$GCP_CREDENTIALS" ]; then
+            echo "GCP_CREDENTIALS secret is not set"
+            exit 1
+          fi
+
+      - name: Build debug APK
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        run: gradle -Pandroid.useAndroidX=true -Pandroid.nonTransitiveRClass=true assembleDebug --stacktrace
+
+      - name: Locate APK
+        run: |
+          APK_PATH="$(find build/outputs/apk/debug -name '*debug*.apk' ! -name '*androidTest*' | head -n 1)"
+          if [ -z "$APK_PATH" ]; then
+            echo "Debug APK not found"
+            exit 1
+          fi
+          echo "APK_PATH=$APK_PATH" >> "$GITHUB_ENV"
+          echo "Using APK: $APK_PATH"
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: personal-ai-radar-debug-apk
+          path: ${{ env.APK_PATH }}
+          if-no-files-found: error
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Run Firebase Test Lab Robo test
+        env:
+          FIREBASE_TEST_LAB_PROJECT_ID: ${{ secrets.FIREBASE_TEST_LAB_PROJECT_ID }}
+        run: |
+          gcloud config set project "$FIREBASE_TEST_LAB_PROJECT_ID"
+          gcloud firebase test android run \
+            --type robo \
+            --app "$APK_PATH" \
+            --device model=Pixel2,version=30,locale=ru,orientation=portrait \
+            --timeout 120s \
+            --client-details matrixLabel="AI Radar Robo ${GITHUB_SHA::7}" \
+            --verbosity=info
