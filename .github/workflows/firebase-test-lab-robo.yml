@@ -84,9 +84,23 @@ jobs:
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+          project_id: ${{ secrets.FIREBASE_TEST_LAB_PROJECT_ID }}
 
       - name: Set up Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v3
+
+      - name: Force Google Cloud project
+        env:
+          FIREBASE_TEST_LAB_PROJECT_ID: ${{ secrets.FIREBASE_TEST_LAB_PROJECT_ID }}
+        run: |
+          unset CLOUDSDK_CORE_PROJECT CLOUDSDK_PROJECT GCLOUD_PROJECT GCP_PROJECT GOOGLE_CLOUD_PROJECT
+          gcloud --quiet config set project "$FIREBASE_TEST_LAB_PROJECT_ID"
+          echo "CLOUDSDK_CORE_PROJECT=$FIREBASE_TEST_LAB_PROJECT_ID" >> "$GITHUB_ENV"
+          echo "CLOUDSDK_PROJECT=$FIREBASE_TEST_LAB_PROJECT_ID" >> "$GITHUB_ENV"
+          echo "GCLOUD_PROJECT=$FIREBASE_TEST_LAB_PROJECT_ID" >> "$GITHUB_ENV"
+          echo "GCP_PROJECT=$FIREBASE_TEST_LAB_PROJECT_ID" >> "$GITHUB_ENV"
+          echo "GOOGLE_CLOUD_PROJECT=$FIREBASE_TEST_LAB_PROJECT_ID" >> "$GITHUB_ENV"
+          gcloud auth list --filter=status:ACTIVE --format="value(account)" | sed 's/@.*$/@***/'
 
       - name: Select Firebase Test Lab device
         env:
