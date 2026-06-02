@@ -179,6 +179,22 @@ jobs:
           print(summary.read_text(encoding="utf-8"))
           PY
 
+      - name: Prepare Firebase Test Lab results bucket
+        env:
+          FIREBASE_TEST_LAB_PROJECT_ID: ${{ secrets.FIREBASE_TEST_LAB_PROJECT_ID }}
+        run: |
+          mkdir -p test-results/firebase-test-lab
+          gcloud --quiet config set project "$FIREBASE_TEST_LAB_PROJECT_ID"
+          RESULTS_BUCKET="${FIREBASE_TEST_LAB_PROJECT_ID}-test-lab-results"
+          if ! gcloud storage buckets describe "gs://${RESULTS_BUCKET}" >/dev/null 2>&1; then
+            gcloud storage buckets create "gs://${RESULTS_BUCKET}" \
+              --project="$FIREBASE_TEST_LAB_PROJECT_ID" \
+              --location=us \
+              --uniform-bucket-level-access
+          fi
+          echo "FTL_RESULTS_BUCKET=gs://${RESULTS_BUCKET}" >> "$GITHUB_ENV"
+          echo "results_bucket=gs://${RESULTS_BUCKET}" > test-results/firebase-test-lab/results-bucket.txt
+
       - name: Run Firebase Test Lab Robo test
         env:
           FIREBASE_TEST_LAB_PROJECT_ID: ${{ secrets.FIREBASE_TEST_LAB_PROJECT_ID }}
@@ -187,6 +203,7 @@ jobs:
           echo "commit=$GITHUB_SHA" > test-results/firebase-test-lab/summary.txt
           echo "apk=$APK_PATH" >> test-results/firebase-test-lab/summary.txt
           echo "device=$FTL_MODEL, Android $FTL_VERSION, ru, portrait" >> test-results/firebase-test-lab/summary.txt
+          echo "results_bucket=$FTL_RESULTS_BUCKET" >> test-results/firebase-test-lab/summary.txt
           echo "timeout=120s" >> test-results/firebase-test-lab/summary.txt
           gcloud --quiet config set project "$FIREBASE_TEST_LAB_PROJECT_ID"
           set +e
@@ -194,6 +211,8 @@ jobs:
             --type robo \
             --app "$APK_PATH" \
             --device model="$FTL_MODEL",version="$FTL_VERSION",locale=ru,orientation=portrait \
+            --results-bucket "$FTL_RESULTS_BUCKET" \
+            --results-dir "robo/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --timeout 120s \
             --client-details matrixLabel="AI Radar Robo ${GITHUB_SHA::7}" \
             --verbosity=info 2>&1 | tee test-results/firebase-test-lab/gcloud-output.log
