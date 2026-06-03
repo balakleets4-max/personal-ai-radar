@@ -46,6 +46,9 @@ class CalendarSourceReader(private val context: Context) {
                 if (title.isBlank()) continue
 
                 val beginMillis = cursor.getLongSafe(COL_BEGIN)
+                val endMillis = cursor.getLongSafe(COL_END)
+                val allDay = cursor.getIntSafe(COL_ALL_DAY) == 1
+                if (!allDay && endMillis > 0L && endMillis <= now) continue
                 val daysFromNow = ((beginMillis - now).coerceAtLeast(0L) / TimeUnit.DAYS.toMillis(1L)).toInt()
 
                 events.add(
@@ -57,8 +60,8 @@ class CalendarSourceReader(private val context: Context) {
                         description = cursor.getStringSafe(COL_DESCRIPTION).trim(),
                         location = cursor.getStringSafe(COL_EVENT_LOCATION).trim(),
                         beginMillis = beginMillis,
-                        endMillis = cursor.getLongSafe(COL_END),
-                        allDay = cursor.getIntSafe(COL_ALL_DAY) == 1,
+                        endMillis = endMillis,
+                        allDay = allDay,
                         controlMode = CalendarControlMode.fromDaysFromNow(daysFromNow)
                     )
                 )
