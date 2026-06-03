@@ -30,7 +30,7 @@ class QuickCaptureRepository(
             ?.takeIf { it.isNotBlank() }
             ?.let { OfflineTextPolisher.polishAction(it, dateSignal) }
             ?.takeIf { it.isNotBlank() }
-        val actionText = cloudActionText ?: offlineActionText
+        val actionText = if (cloudActionText != null && !isWeakCloudAction(cloudActionText, offlineActionText)) cloudActionText else offlineActionText
         val mainIntent = normalizeIntent(cloudResult?.type) ?: detectIntent(cleanText, dateSignal)
         val summary = actionText.ifBlank { cleanText }.take(120)
         val hasAction = hasActionSignal(cleanText) || actionText.isNotBlank()
@@ -146,8 +146,16 @@ class QuickCaptureRepository(
         val lower = text.lowercase()
         return listOf(
             "надо", "нужно", "сделать", "проверить", "позвонить", "купить", "отправить", "забрать", "принести", "выпить", "оплатить",
-            "do", "check", "call", "send", "buy", "pay", "bring"
+            "отметить", "праздновать", "отмечаю", "do", "check", "call", "send", "buy", "pay", "bring"
         ).any { it in lower }
+    }
+
+    private fun isWeakCloudAction(cloudAction: String, offlineAction: String): Boolean {
+        val cleanCloud = cloudAction.lowercase(Locale.getDefault()).trim(' ', '.', ',', ':', ';', '—', '-')
+        val cleanOffline = offlineAction.lowercase(Locale.getDefault()).trim()
+        if (cleanCloud in setOf("встреча", "событие", "дело", "задача", "напоминание")) return cleanOffline.length > cleanCloud.length + 6
+        if (cleanOffline.contains("день") && !cleanCloud.contains("день")) return true
+        return false
     }
 
     private fun hasRiskSignal(text: String): Boolean {
@@ -265,7 +273,7 @@ class QuickCaptureRepository(
     }
 
     private fun findSpokenClockTime(text: String): ClockTime? {
-        val match = Regex("\\bв\\s+(\\d{1,2}|час|один|одна|одну|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|одиннадцать|двенадцать)(?:\\s+час(?:а|ов)?)?\\s+(дня|вечера|утра|ночи)\\b", RegexOption.IGNORE_CASE).find(text) ?: return null
+        val match = Regex("\\b(?:в\\s+)?(\\d{1,2}|час|один|одна|одну|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|одиннадцать|двенадцать)(?:\\s+час(?:а|ов)?)?\\s+(дня|вечера|утра|ночи)\\b", RegexOption.IGNORE_CASE).find(text) ?: return null
         val rawHour = match.groupValues[1].toIntOrNull() ?: when (match.groupValues[1].lowercase(Locale.getDefault()).replace('ё', 'е')) {
             "час", "один", "одна", "одну" -> 1
             "два", "две" -> 2
@@ -320,7 +328,7 @@ class QuickCaptureRepository(
             .replace(Regex("(?i)\\bпожалуйста\\b"), "")
             .replace(Regex("\\b(сегодня|завтра|послезавтра)\\b"), "")
             .replace(Regex("\\b(утром|днём|днем|вечером)\\b"), "")
-            .replace(Regex("\\bв\\s+(\\d{1,2}|час|один|одна|одну|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|одиннадцать|двенадцать)(?:\\s+час(?:а|ов)?)?\\s+(дня|вечера|утра|ночи)\\b", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("\\b(?:в\\s+)?(\\d{1,2}|час|один|одна|одну|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|одиннадцать|двенадцать)(?:\\s+час(?:а|ов)?)?\\s+(дня|вечера|утра|ночи)\\b", RegexOption.IGNORE_CASE), "")
             .replace(Regex("(?:\\bв\\s*)?\\d{1,2}[:.]\\d{2}\\b"), "")
             .replace(Regex("\\s+"), " ")
             .trim(' ', ',', '.', '-', '—', ':', ';')
