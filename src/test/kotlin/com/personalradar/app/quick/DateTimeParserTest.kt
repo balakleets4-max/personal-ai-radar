@@ -154,6 +154,23 @@ class DateTimeParserTest {
     }
 
     @Test
+    fun parsesValentinesDayWithSpokenTimeAndDate() {
+        val result = DateTimeParser.parse("день влюбленных час дня девятого октября", baseMillis)
+        assertNotNull(result)
+        assertEquals("09.10.2026 13:00", result!!.label)
+        assertEquals("13:00", result.timeText)
+    }
+
+    @Test
+    fun parsesNamedMonthDateRange() {
+        val result = DateTimeParser.parse("день китайца с 27 по 29 января", baseMillis)
+        assertNotNull(result)
+        assertEquals("27.01.2027–29.01.2027 09:00", result!!.label)
+        assertEquals("27.01.2027–29.01.2027", result.dateText)
+        assertEquals("09:00", result.timeText)
+    }
+
+    @Test
     fun removesRelativeDurationFromActionText() {
         val clean = DateTimeParser.removeRelativeDuration("Через минуту и 10 секунд напомни выпить воды")
         assertEquals("напомни выпить воды", clean)
