@@ -16,6 +16,7 @@ object DateTimeParser {
         return RELATIVE_PHRASE_REGEX.replace(normalize(text), " ")
             .replace(ABSOLUTE_DATE_TIME_REGEX, " ")
             .replace(NAMED_MONTH_DATE_TIME_REGEX, " ")
+            .replace(SPOKEN_CLOCK_TIME_REGEX, " ")
             .replace(Regex("\\s+"), " ")
             .trim(' ', ',', '.', '-', '—', ':', ';')
     }
@@ -25,41 +26,11 @@ object DateTimeParser {
         val day = match.groupValues[1].toIntOrNull() ?: return null
         val month = match.groupValues[2].toIntOrNull() ?: return null
         val rawYear = match.groupValues.getOrNull(3).orEmpty()
-        val hour = match.groupValues.getOrNull(4).orEmpty().toIntOrNull() ?: DEFAULT_HOUR
-        val minute = match.groupValues.getOrNull(5).orEmpty().toIntOrNull() ?: DEFAULT_MINUTE
+        val detectedTime = findClockTime(text) ?: findSpokenClockTime(text)
+        val hour = match.groupValues.getOrNull(4).orEmpty().toIntOrNull() ?: detectedTime?.hour ?: DEFAULT_HOUR
+        val minute = match.groupValues.getOrNull(5).orEmpty().toIntOrNull() ?: detectedTime?.minute ?: DEFAULT_MINUTE
 
-        if (day !in 1..31 || month !in 1..12 || hour !in 0..23 || minute !in 0..59) return null
-
-        val now = Calendar.getInstance().apply { timeInMillis = nowMillis }
-        val year = when {
-            rawYear.isBlank() -> now.get(Calendar.YEAR)
-            rawYear.length == 2 -> 2000 + rawYear.toInt()
-            else -> rawYear.toIntOrNull() ?: now.get(Calendar.YEAR)
-        }
-
-        val calendar = Calendar.getInstance().apply {
-            clear()
-            set(Calendar.YEAR, year)
-            set(Calendar.MONTH, month - 1)
-            set(Calendar.DAY_OF_MONTH, day)
-            set(Calendar.HOUR_OF_DAY, hour)
-            set(Calendar.MINUTE, minute)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-
-        if (rawYear.isBlank() && calendar.timeInMillis < nowMillis - ONE_DAY_MILLIS) {
-            calendar.add(Calendar.YEAR, 1)
-        }
-
-        val dateText = "%02d.%02d".format(day, month)
-        val timeText = "%02d:%02d".format(hour, minute)
-        return DateSignal(
-            label = "$dateText $timeText",
-            dateText = dateText,
-            timeText = timeText,
-            timestampMillis = calendar.timeInMillis
-        )
+        return buildAbsoluteDateSignal(day, month, rawYear, hour, minute, nowMillis)
     }
 
     private fun parseNamedMonthDateTime(text: String, nowMillis: Long): DateSignal? {
@@ -67,10 +38,22 @@ object DateTimeParser {
         val day = match.groupValues[1].toIntOrNull() ?: return null
         val month = parseMonthName(match.groupValues[2]) ?: return null
         val rawYear = match.groupValues.getOrNull(3).orEmpty()
-        val hour = match.groupValues.getOrNull(4).orEmpty().toIntOrNull() ?: DEFAULT_HOUR
-        val minute = match.groupValues.getOrNull(5).orEmpty().toIntOrNull() ?: DEFAULT_MINUTE
+        val detectedTime = findClockTime(text) ?: findSpokenClockTime(text)
+        val hour = match.groupValues.getOrNull(4).orEmpty().toIntOrNull() ?: detectedTime?.hour ?: DEFAULT_HOUR
+        val minute = match.groupValues.getOrNull(5).orEmpty().toIntOrNull() ?: detectedTime?.minute ?: DEFAULT_MINUTE
 
-        if (day !in 1..31 || hour !in 0..23 || minute !in 0..59) return null
+        return buildAbsoluteDateSignal(day, month, rawYear, hour, minute, nowMillis)
+    }
+
+    private fun buildAbsoluteDateSignal(
+        day: Int,
+        month: Int,
+        rawYear: String,
+        hour: Int,
+        minute: Int,
+        nowMillis: Long
+    ): DateSignal? {
+        if (day !in 1..31 || month !in 1..12 || hour !in 0..23 || minute !in 0..59) return null
 
         val now = Calendar.getInstance().apply { timeInMillis = nowMillis }
         val year = when {
@@ -135,19 +118,30 @@ object DateTimeParser {
         val hasPreciseTimeUnit = parts.any { part ->
             part.unit == TimeUnitName.HOUR || part.unit == TimeUnitName.MINUTE || part.unit == TimeUnitName.SECOND
         }
-        val defaultTimeText = if (hasPreciseTimeUnit) null else {
-            calendar.set(Calendar.HOUR_OF_DAY, DEFAULT_HOUR)
-            calendar.set(Calendar.MINUTE, DEFAULT_MINUTE)
-            calendar.set(Calendar.SECOND, 0)
-            calendar.set(Calendar.MILLISECOND, 0)
-            DEFAULT_TIME_TEXT
+        val explicitTime = if (hasPreciseTimeUnit) null else findClockTime(text) ?: findSpokenClockTime(text)
+        val timeText = when {
+            hasPreciseTimeUnit -> null
+            explicitTime != null -> {
+                calendar.set(Calendar.HOUR_OF_DAY, explicitTime.hour)
+                calendar.set(Calendar.MINUTE, explicitTime.minute)
+                calendar.set(Calendar.SECOND, 0)
+                calendar.set(Calendar.MILLISECOND, 0)
+                explicitTime.label
+            }
+            else -> {
+                calendar.set(Calendar.HOUR_OF_DAY, DEFAULT_HOUR)
+                calendar.set(Calendar.MINUTE, DEFAULT_MINUTE)
+                calendar.set(Calendar.SECOND, 0)
+                calendar.set(Calendar.MILLISECOND, 0)
+                DEFAULT_TIME_TEXT
+            }
         }
 
         val label = buildLabel(parts)
         return DateSignal(
-            label = if (defaultTimeText == null) label else "$label $defaultTimeText",
+            label = if (timeText == null) label else "$label $timeText",
             dateText = label,
-            timeText = defaultTimeText,
+            timeText = timeText,
             timestampMillis = calendar.timeInMillis
         )
     }
@@ -280,11 +274,62 @@ object DateTimeParser {
     }
 
     private fun normalize(text: String): String {
-        return text
-            .lowercase(Locale.getDefault())
-            .replace('ё', 'е')
+        return normalizeRussianOrdinalDates(
+            text
+                .lowercase(Locale.getDefault())
+                .replace('ё', 'е')
+        )
             .replace(Regex("\\s+"), " ")
             .trim()
+    }
+
+    private fun normalizeRussianOrdinalDates(text: String): String {
+        return ORDINAL_NAMED_MONTH_REGEX.replace(text) { match ->
+            val day = parseOrdinalDayWords(match.groupValues[1]) ?: return@replace match.value
+            "$day ${match.groupValues[2]}"
+        }
+    }
+
+    private fun parseOrdinalDayWords(value: String): Int? {
+        val tokens = value.lowercase(Locale.getDefault()).replace('ё', 'е').trim().split(Regex("\\s+"))
+        if (tokens.isEmpty()) return null
+        if (tokens.size == 1) return ORDINAL_DAY_WORDS[tokens[0]]
+        if (tokens.size == 2) {
+            val tens = when (tokens[0]) {
+                "двадцать" -> 20
+                "тридцать" -> 30
+                else -> return null
+            }
+            val unit = ORDINAL_DAY_WORDS[tokens[1]] ?: return null
+            return tens + unit
+        }
+        return null
+    }
+
+    private fun findClockTime(text: String): ClockTime? {
+        val match = Regex("(?:\\bв\\s*)?(\\d{1,2})[:.](\\d{2})\\b").find(text) ?: return null
+        val hour = match.groupValues[1].toIntOrNull() ?: return null
+        val minute = match.groupValues[2].toIntOrNull() ?: return null
+        if (hour !in 0..23 || minute !in 0..59) return null
+        return ClockTime(hour, minute, "%02d:%02d".format(hour, minute))
+    }
+
+    private fun findSpokenClockTime(text: String): ClockTime? {
+        val match = SPOKEN_CLOCK_TIME_REGEX.find(text) ?: return null
+        val rawHour = parseSpokenHour(match.groupValues[1]) ?: return null
+        val period = match.groupValues[2].lowercase(Locale.getDefault())
+        val hour = when (period) {
+            "дня", "вечера" -> if (rawHour in 1..11) rawHour + 12 else rawHour
+            "ночи" -> if (rawHour == 12) 0 else rawHour
+            "утра" -> if (rawHour == 12) 0 else rawHour
+            else -> rawHour
+        }
+        if (hour !in 0..23) return null
+        return ClockTime(hour, 0, "%02d:00".format(hour))
+    }
+
+    private fun parseSpokenHour(value: String): Int? {
+        return value.toIntOrNull() ?: HOUR_WORDS[value.lowercase(Locale.getDefault()).replace('ё', 'е')]
     }
 
     private data class AmountParse(val amount: Int, val nextIndex: Int)
@@ -351,6 +396,53 @@ object DateTimeParser {
     )
 
     private const val MONTH_NAMES = "января|январь|февраля|февраль|марта|март|апреля|апрель|мая|май|июня|июнь|июля|июль|августа|август|сентября|сентябрь|октября|октябрь|ноября|ноябрь|декабря|декабрь"
+    private const val ORDINAL_DAY_WORD_PATTERN = "первого|второго|третьего|четвертого|пятого|шестого|седьмого|восьмого|девятого|десятого|одиннадцатого|двенадцатого|тринадцатого|четырнадцатого|пятнадцатого|шестнадцатого|семнадцатого|восемнадцатого|девятнадцатого|двадцатого|тридцатого|двадцать\\s+(?:первого|второго|третьего|четвертого|пятого|шестого|седьмого|восьмого|девятого)|тридцать\\s+первого"
+    private val ORDINAL_NAMED_MONTH_REGEX = Regex("\\b($ORDINAL_DAY_WORD_PATTERN)\\s+($MONTH_NAMES)\\b", RegexOption.IGNORE_CASE)
+    private val SPOKEN_CLOCK_TIME_REGEX = Regex("\\bв\\s+(\\d{1,2}|час|один|одна|одну|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|одиннадцать|двенадцать)(?:\\s+час(?:а|ов)?)?\\s+(дня|вечера|утра|ночи)\\b", RegexOption.IGNORE_CASE)
+
+    private val ORDINAL_DAY_WORDS = mapOf(
+        "первого" to 1,
+        "второго" to 2,
+        "третьего" to 3,
+        "четвертого" to 4,
+        "пятого" to 5,
+        "шестого" to 6,
+        "седьмого" to 7,
+        "восьмого" to 8,
+        "девятого" to 9,
+        "десятого" to 10,
+        "одиннадцатого" to 11,
+        "двенадцатого" to 12,
+        "тринадцатого" to 13,
+        "четырнадцатого" to 14,
+        "пятнадцатого" to 15,
+        "шестнадцатого" to 16,
+        "семнадцатого" to 17,
+        "восемнадцатого" to 18,
+        "девятнадцатого" to 19,
+        "двадцатого" to 20,
+        "тридцатого" to 30
+    )
+
+    private val HOUR_WORDS = mapOf(
+        "час" to 1,
+        "один" to 1,
+        "одна" to 1,
+        "одну" to 1,
+        "два" to 2,
+        "две" to 2,
+        "три" to 3,
+        "четыре" to 4,
+        "пять" to 5,
+        "шесть" to 6,
+        "семь" to 7,
+        "восемь" to 8,
+        "девять" to 9,
+        "десять" to 10,
+        "одиннадцать" to 11,
+        "двенадцать" to 12
+    )
+
     private val UNIT_PATTERN = "(?:секунд[ауые]?|сек|минут[ауые]?|мин|час(?:а|ов)?|день|дня|дней|дн[яей]*|недел[яюьиь]*|месяц(?:а|ев)?|мес|год|года|лет)"
     private val NUMBER_PATTERN = "(?:\\d+|ноль|один|одна|одно|одну|одного|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|одиннадцать|двенадцать|тринадцать|четырнадцать|пятнадцать|шестнадцать|семнадцать|восемнадцать|девятнадцать|двадцать|тридцать|сорок|пятьдесят|шестьдесят|семьдесят|восемьдесят|девяносто|сто|двести|триста|четыреста|пятьсот|шестьсот|семьсот|восемьсот|девятьсот)"
     private val DURATION_PART_PATTERN = "(?:(?:$NUMBER_PATTERN)(?:\\s+$NUMBER_PATTERN)*\\s+)?$UNIT_PATTERN"
