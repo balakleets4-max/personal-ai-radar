@@ -77,7 +77,6 @@ class DateTimeParserTest {
         assertEquals(expected, result.timestampMillis)
     }
 
-
     @Test
     fun parsesNamedMonthDate() {
         val result = DateTimeParser.parse("съездить к родителям на дачу 26 августа", baseMillis)
@@ -121,6 +120,37 @@ class DateTimeParserTest {
         val result = DateTimeParser.parse("съездить к родителям на дачу 26 августа", septemberBase)
         assertNotNull(result)
         assertEquals("26.08.2027 09:00", result!!.label)
+    }
+
+    @Test
+    fun parsesSpokenNamedMonthDateFromVoiceInput() {
+        val result = DateTimeParser.parse("съездить к родителям на дачу двадцать шестого августа", baseMillis)
+        assertNotNull(result)
+        assertEquals("26.08.2026 09:00", result!!.label)
+        assertEquals("26.08.2026", result.dateText)
+        assertEquals("09:00", result.timeText)
+    }
+
+    @Test
+    fun parsesFifthJanuaryWithSpokenAfternoonTime() {
+        val result = DateTimeParser.parse("пятого января съездить к отцу на дачу и покопать грядки в час дня", baseMillis)
+        assertNotNull(result)
+        assertEquals("05.01.2027 13:00", result!!.label)
+        assertEquals("13:00", result.timeText)
+    }
+
+    @Test
+    fun parsesFifthFebruaryFromVoiceInput() {
+        val result = DateTimeParser.parse("пятого февраля съездить к родителям", baseMillis)
+        assertNotNull(result)
+        assertEquals("05.02.2027 09:00", result!!.label)
+    }
+
+    @Test
+    fun parsesThirtyFirstDecemberFromVoiceInput() {
+        val result = DateTimeParser.parse("тридцать первого декабря проверить документы", baseMillis)
+        assertNotNull(result)
+        assertEquals("31.12.2026 09:00", result!!.label)
     }
 
     @Test
