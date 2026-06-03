@@ -228,7 +228,7 @@ class QuickCaptureRepository(
             else -> null
         } ?: return null
 
-        val exactTime = findClockTime(text)
+        val exactTime = findClockTime(text) ?: findSpokenClockTime(text)
         if (exactTime != null) {
             calendar.set(Calendar.HOUR_OF_DAY, exactTime.hour)
             calendar.set(Calendar.MINUTE, exactTime.minute)
@@ -243,7 +243,7 @@ class QuickCaptureRepository(
     }
 
     private fun parseExplicitTime(text: String, nowMillis: Long): DateSignal? {
-        val time = findClockTime(text) ?: return null
+        val time = findClockTime(text) ?: findSpokenClockTime(text) ?: return null
         val calendar = Calendar.getInstance().apply { timeInMillis = nowMillis }
         calendar.set(Calendar.HOUR_OF_DAY, time.hour)
         calendar.set(Calendar.MINUTE, time.minute)
@@ -262,6 +262,34 @@ class QuickCaptureRepository(
         val minute = match.groupValues[2].toIntOrNull() ?: return null
         if (hour !in 0..23 || minute !in 0..59) return null
         return ClockTime(hour, minute, "%02d:%02d".format(hour, minute))
+    }
+
+    private fun findSpokenClockTime(text: String): ClockTime? {
+        val match = Regex("\\bв\\s+(\\d{1,2}|час|один|одна|одну|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|одиннадцать|двенадцать)(?:\\s+час(?:а|ов)?)?\\s+(дня|вечера|утра|ночи)\\b", RegexOption.IGNORE_CASE).find(text) ?: return null
+        val rawHour = match.groupValues[1].toIntOrNull() ?: when (match.groupValues[1].lowercase(Locale.getDefault()).replace('ё', 'е')) {
+            "час", "один", "одна", "одну" -> 1
+            "два", "две" -> 2
+            "три" -> 3
+            "четыре" -> 4
+            "пять" -> 5
+            "шесть" -> 6
+            "семь" -> 7
+            "восемь" -> 8
+            "девять" -> 9
+            "десять" -> 10
+            "одиннадцать" -> 11
+            "двенадцать" -> 12
+            else -> return null
+        }
+        val period = match.groupValues[2].lowercase(Locale.getDefault())
+        val hour = when (period) {
+            "дня", "вечера" -> if (rawHour in 1..11) rawHour + 12 else rawHour
+            "ночи" -> if (rawHour == 12) 0 else rawHour
+            "утра" -> if (rawHour == 12) 0 else rawHour
+            else -> rawHour
+        }
+        if (hour !in 0..23) return null
+        return ClockTime(hour, 0, "%02d:00".format(hour))
     }
 
     private fun detectTimeOfDay(text: String): TimeSignal {
@@ -292,6 +320,7 @@ class QuickCaptureRepository(
             .replace(Regex("(?i)\\bпожалуйста\\b"), "")
             .replace(Regex("\\b(сегодня|завтра|послезавтра)\\b"), "")
             .replace(Regex("\\b(утром|днём|днем|вечером)\\b"), "")
+            .replace(Regex("\\bв\\s+(\\d{1,2}|час|один|одна|одну|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|одиннадцать|двенадцать)(?:\\s+час(?:а|ов)?)?\\s+(дня|вечера|утра|ночи)\\b", RegexOption.IGNORE_CASE), "")
             .replace(Regex("(?:\\bв\\s*)?\\d{1,2}[:.]\\d{2}\\b"), "")
             .replace(Regex("\\s+"), " ")
             .trim(' ', ',', '.', '-', '—', ':', ';')
