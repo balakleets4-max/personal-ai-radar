@@ -5,6 +5,7 @@ import android.content.Context
 import android.database.Cursor
 import android.provider.CalendarContract
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -12,9 +13,10 @@ import java.util.concurrent.TimeUnit
 class CalendarSourceReader(private val context: Context) {
     fun readUpcomingEvents(daysAhead: Int = 28, limit: Int = 120): List<CalendarSourceEvent> {
         val now = System.currentTimeMillis()
+        val start = startOfToday(now)
         val end = now + TimeUnit.DAYS.toMillis(daysAhead.toLong().coerceAtLeast(1L))
         val builder = CalendarContract.Instances.CONTENT_URI.buildUpon()
-        ContentUris.appendId(builder, now)
+        ContentUris.appendId(builder, start)
         ContentUris.appendId(builder, end)
 
         val projection = arrayOf(
@@ -64,6 +66,16 @@ class CalendarSourceReader(private val context: Context) {
         }
 
         return events
+    }
+
+    private fun startOfToday(nowMillis: Long): Long {
+        return Calendar.getInstance().apply {
+            timeInMillis = nowMillis
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
     }
 
     private fun Cursor.getStringSafe(columnName: String): String {
