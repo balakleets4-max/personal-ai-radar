@@ -31,15 +31,17 @@ adb logcat -d > smoke-results/logcat.txt || true
 
 if [ ! -s smoke-results/app.pid ]; then
   echo "App process is not running after deterministic MainActivity launch" | tee smoke-results/failure.txt
-  grep -E "FATAL EXCEPTION|Process: com\.personalradar\.app|CRASH: com\.personalradar\.app|AndroidRuntime|ActivityTaskManager|Exception|Error" smoke-results/logcat.txt > smoke-results/crash-snippet.txt || true
+  grep -E "FATAL EXCEPTION|Process: ${PACKAGE_NAME}|CRASH: ${PACKAGE_NAME}|AndroidRuntime|ActivityTaskManager|Exception|Error" smoke-results/logcat.txt > smoke-results/crash-snippet.txt || true
+  cat smoke-results/crash-snippet.txt || true
   exit 1
 fi
 
-# Do not treat generic AndroidRuntime entries as crashes: the launcher itself may log
-# unrelated AndroidRuntime lines even when the app starts normally. Fail only on
-# app-specific crash signatures.
-if grep -E "FATAL EXCEPTION|Process: com\.personalradar\.app|CRASH: com\.personalradar\.app" smoke-results/logcat.txt > smoke-results/crash-snippet.txt; then
+# Fail only on crashes that explicitly belong to the app process. Generic emulator,
+# launcher or monkey AndroidRuntime/FATAL lines are noisy on CI and must not fail the
+# smoke test while the app process is alive.
+if grep -E "Process: ${PACKAGE_NAME}|CRASH: ${PACKAGE_NAME}" smoke-results/logcat.txt > smoke-results/crash-snippet.txt; then
   echo "App-specific crash signature found in logcat" | tee -a smoke-results/failure.txt
+  cat smoke-results/crash-snippet.txt || true
   exit 1
 fi
 
