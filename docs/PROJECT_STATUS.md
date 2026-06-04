@@ -47,7 +47,7 @@ Important v0.1 concepts:
 ### Working
 
 - `Android Build` GitHub Actions workflow works and produces a debug APK.
-- `Android Emulator Smoke Test` GitHub Actions workflow works and is green.
+- `Android Emulator Smoke Test` GitHub Actions workflow works and is green when the app can launch.
 - The smoke test builds the APK, launches an Android emulator in GitHub Actions, installs the APK, opens the app, checks that the app process is alive, captures `logcat`, and saves a screenshot/artifacts.
 - This gives us a free automatic guard against the situation: APK builds successfully but the app immediately fails to launch.
 
@@ -98,11 +98,17 @@ Decision:
 
 ## Important recent app/frontend commits
 
+- `72533e6` — Fix launcher icon resource routing
+  - Build 254 / Android Build #281 showed that the previous launcher icon fix was not enough.
+  - Restored `android:roundIcon="@mipmap/ic_launcher_round"` in `src/main/AndroidManifest.xml`.
+  - Routed both adaptive launcher resources to `@drawable/ic_launcher_ai_radar` with transparent foreground.
+  - Added density-specific `mipmap-mdpi/hdpi/xhdpi/xxhdpi/xxxhdpi` XML launcher resources so fallback launcher paths also resolve to the AI Radar image.
+  - Status: committed to `main`, needs fresh APK build and clean-install verification on phone.
+
 - `94c418b` — Update launcher icon resources
-  - Replaced the adaptive launcher icon source with the user's AI Radar lighthouse concept artwork.
-  - Added `src/main/res/drawable-nodpi/ic_launcher_ai_radar.webp`.
-  - Updated `src/main/res/mipmap-anydpi-v26/ic_launcher.xml` and `ic_launcher_round.xml` to use the new artwork.
-  - Status: committed to `main`, needs APK build / clean-install verification on a phone.
+  - Added `src/main/res/drawable-nodpi/ic_launcher_ai_radar.webp` from the user's AI Radar lighthouse concept artwork.
+  - Previous status: insufficient after Build 254 / Android Build #281 because APK still did not visually match the intended original icon.
+  - Do not mark launcher icon fixed until it visually matches the user's original image after clean install.
 
 ## Important recent backend commits
 
@@ -115,13 +121,22 @@ Decision:
 
 ## Last known app testing context
 
+### Build 254 / Android Build #281 observations
+
+Frontend/UI:
+
+- Launcher icon bug is **not fixed** in Build 254 / Android Build #281.
+- The APK icon still did not match the user's original AI Radar concept image: lighthouse + glowing road / pulse line / “Линия спасения” concept.
+- Previous frontend fix `94c418b` is considered insufficient.
+- Follow-up fix committed in `72533e6` to restore `roundIcon` and force all launcher icon routes toward the AI Radar image resource.
+- Verification still required: build fresh APK, uninstall old app, install fresh APK, and compare launcher / app list / system app info icon visually against the user's original.
+
 ### Build 254 / Android Build #272 observations
 
 Frontend/UI:
 
 - Launcher icon mismatch was reported: the app icon on the Android launcher did not match the AI Radar icon concept sent by the user.
-- Fix committed in `94c418b`.
-- Verification still needed: build fresh APK, uninstall the old app, install the fresh APK, and confirm the launcher icon changed on the phone.
+- Fix committed in `94c418b`, but later testing in Build #281 showed it was not enough.
 
 Backend / CalendarSync:
 
@@ -157,18 +172,22 @@ Not proven yet:
 
 Known issues carried forward:
 
-1. **Temporal engine is not unified yet**
+1. **Launcher icon still needs visual verification**
+   - Build #281 proved the previous fix was not sufficient.
+   - Do not close this bug until a fresh APK after `72533e6` visually matches the user's original AI Radar icon.
+
+2. **Temporal engine is not unified yet**
    - Current DateTime parsing has many local fixes.
    - Needed: one `TemporalResult` / `TemporalEngine` used by diagnostics, AI Resolution, RadarCard creation, and notification scheduling.
 
-2. **Date ranges remain fragile**
+3. **Date ranges remain fragile**
    - Example: `день китаец с пятого мая по седьмое мая` should produce start and end dates.
    - Current implementation may not represent ranges as first-class data.
 
-3. **Known holidays/events are not supported as a real knowledge base**
+4. **Known holidays/events are not supported as a real knowledge base**
    - Example: `день влюбленных в час дня` should not automatically claim a holiday date unless an explicit event database is added.
 
-4. **Calendar background sync not fully proven**
+5. **Calendar background sync not fully proven**
    - Manual/foreground import works better than background reliability.
    - Still needs testing after process kill, reboot, and long idle.
 
@@ -177,11 +196,22 @@ Known issues carried forward:
 Recommended next tasks:
 
 ```text
-P1: Run CI after latest backend/frontend changes and verify APK.
+P1: Run Android Build after `72533e6` and verify the APK.
+P1: Test launcher icon after clean install on a phone: launcher, app list, and system app info.
 P1: Test CalendarSync with a user event 26 days ahead, e.g. “День петуха тест 1” on 30 June.
-P1: Verify launcher icon after clean install.
 P1: Design a real TemporalResult / TemporalEngine instead of adding more regex patches.
 ```
+
+Acceptance criteria for launcher icon fix:
+
+- Fresh APK builds successfully after `72533e6`.
+- Old app is uninstalled before test install.
+- New APK is installed cleanly.
+- Android launcher shows the AI Radar lighthouse icon from the user's original concept image.
+- App list shows the same AI Radar icon.
+- System app info shows the same AI Radar icon.
+- No old vector launcher icon or fallback/safe placeholder is visible.
+- Bug is not closed unless the icon visually matches the user's original image.
 
 Acceptance criteria for CalendarSync fix:
 
@@ -190,14 +220,6 @@ Acceptance criteria for CalendarSync fix:
 - A user timed event 26 days ahead appears in AI Radar.
 - All-day holiday noise such as `День России` does not appear as an active Radar card.
 - Google Tasks remain clearly unsupported by the calendar module.
-
-Acceptance criteria for launcher icon fix:
-
-- Fresh APK builds successfully after `94c418b`.
-- Old app is uninstalled before test install.
-- New APK is installed cleanly.
-- Android launcher shows the AI Radar lighthouse icon from the user's concept image.
-- No old vector launcher icon is visible.
 
 Acceptance criteria for future Temporal Engine:
 
