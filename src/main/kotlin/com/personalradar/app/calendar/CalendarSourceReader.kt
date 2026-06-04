@@ -12,9 +12,11 @@ import java.util.concurrent.TimeUnit
 
 class CalendarSourceReader(private val context: Context) {
     fun readUpcomingEvents(daysAhead: Int = DEFAULT_DAYS_AHEAD, limit: Int = DEFAULT_LIMIT): List<CalendarSourceEvent> {
+        val effectiveDaysAhead = daysAhead.coerceAtLeast(DEFAULT_DAYS_AHEAD)
+        val effectiveLimit = limit.coerceAtLeast(DEFAULT_LIMIT)
         val now = System.currentTimeMillis()
         val start = startOfToday(now)
-        val end = now + TimeUnit.DAYS.toMillis(daysAhead.toLong().coerceAtLeast(1L))
+        val end = now + TimeUnit.DAYS.toMillis(effectiveDaysAhead.toLong())
         val builder = CalendarContract.Instances.CONTENT_URI.buildUpon()
         ContentUris.appendId(builder, start)
         ContentUris.appendId(builder, end)
@@ -41,7 +43,7 @@ class CalendarSourceReader(private val context: Context) {
             null,
             sortOrder
         )?.use { cursor ->
-            while (cursor.moveToNext() && events.size < limit) {
+            while (cursor.moveToNext() && events.size < effectiveLimit) {
                 val title = cursor.getStringSafe(COL_TITLE).trim()
                 if (title.isBlank()) continue
 
