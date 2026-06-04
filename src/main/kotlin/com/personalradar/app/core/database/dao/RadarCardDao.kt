@@ -187,7 +187,6 @@ interface RadarCardDao {
         SELECT * FROM radar_cards
         WHERE type = 'CALENDAR'
         AND status IN ('ACTIVE', 'SNOOZED')
-        AND dedupeKey LIKE :calendarPattern
         AND title = :title
         ORDER BY updatedAt DESC, createdAt DESC
     """)
@@ -219,6 +218,25 @@ interface RadarCardDao {
         ORDER BY dueAt ASC, createdAt DESC
     """)
     suspend fun getVisibleCalendarCardsInWindow(fromMillis: Long, toMillis: Long): List<RadarCardEntity>
+
+    @Query("""
+        SELECT * FROM radar_cards
+        WHERE type = 'CALENDAR'
+        AND status IN ('ACTIVE', 'SNOOZED')
+        AND dueAt IS NOT NULL
+        AND dueAt < :now
+    """)
+    suspend fun getExpiredVisibleCalendarCards(now: Long): List<RadarCardEntity>
+
+    @Query("""
+        UPDATE radar_cards
+        SET status = 'ARCHIVED', updatedAt = :now
+        WHERE type = 'CALENDAR'
+        AND status IN ('ACTIVE', 'SNOOZED')
+        AND dueAt IS NOT NULL
+        AND dueAt < :now
+    """)
+    suspend fun archiveExpiredVisibleCalendarCards(now: Long)
 
     @Query("""
         SELECT * FROM radar_cards
