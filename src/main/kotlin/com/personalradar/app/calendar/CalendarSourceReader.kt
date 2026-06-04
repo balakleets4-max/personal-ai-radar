@@ -11,7 +11,7 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 class CalendarSourceReader(private val context: Context) {
-    fun readUpcomingEvents(daysAhead: Int = 28, limit: Int = 120): List<CalendarSourceEvent> {
+    fun readUpcomingEvents(daysAhead: Int = DEFAULT_DAYS_AHEAD, limit: Int = DEFAULT_LIMIT): List<CalendarSourceEvent> {
         val now = System.currentTimeMillis()
         val start = startOfToday(now)
         val end = now + TimeUnit.DAYS.toMillis(daysAhead.toLong().coerceAtLeast(1L))
@@ -45,17 +45,21 @@ class CalendarSourceReader(private val context: Context) {
                 val title = cursor.getStringSafe(COL_TITLE).trim()
                 if (title.isBlank()) continue
 
+                val calendarName = cursor.getStringSafe(COL_CALENDAR_DISPLAY_NAME).ifBlank { "Календарь" }
                 val beginMillis = cursor.getLongSafe(COL_BEGIN)
                 val endMillis = cursor.getLongSafe(COL_END)
                 val allDay = cursor.getIntSafe(COL_ALL_DAY) == 1
+
                 if (!allDay && endMillis > 0L && endMillis <= now) continue
+                if (isAllDayHolidayNoise(title = title, calendarName = calendarName, allDay = allDay)) continue
+
                 val daysFromNow = ((beginMillis - now).coerceAtLeast(0L) / TimeUnit.DAYS.toMillis(1L)).toInt()
 
                 events.add(
                     CalendarSourceEvent(
                         eventId = cursor.getLongSafe(COL_EVENT_ID),
                         calendarId = cursor.getLongSafe(COL_CALENDAR_ID),
-                        calendarName = cursor.getStringSafe(COL_CALENDAR_DISPLAY_NAME).ifBlank { "Календарь" },
+                        calendarName = calendarName,
                         title = title,
                         description = cursor.getStringSafe(COL_DESCRIPTION).trim(),
                         location = cursor.getStringSafe(COL_EVENT_LOCATION).trim(),
@@ -69,6 +73,34 @@ class CalendarSourceReader(private val context: Context) {
         }
 
         return events
+    }
+
+    private fun isAllDayHolidayNoise(title: String, calendarName: String, allDay: Boolean): Boolean {
+        if (!allDay) return false
+        val normalizedTitle = title.lowercase(Locale.getDefault()).replace('ё', 'е')
+        val normalizedCalendar = calendarName.lowercase(Locale.getDefault()).replace('ё', 'е')
+
+        val looksLikeHolidayCalendar = listOf(
+            "праздник",
+            "праздники",
+            "holiday",
+            "holidays",
+            "public holidays",
+            "государственные праздники"
+        ).any { it in normalizedCalendar }
+
+        val knownLowSignalHoliday = listOf(
+            "день россии",
+            "новый год",
+            "рождество",
+            "день народного единства",
+            "день победы",
+            "день защитника отечества",
+            "международный женский день",
+            "праздник весны и труда"
+        ).any { it in normalizedTitle }
+
+        return looksLikeHolidayCalendar || knownLowSignalHoliday
     }
 
     private fun startOfToday(nowMillis: Long): Long {
@@ -100,6 +132,9 @@ class CalendarSourceReader(private val context: Context) {
     }
 
     companion object {
+        const val DEFAULT_DAYS_AHEAD = 30
+        const val DEFAULT_LIMIT = 120
+
         private const val COL_EVENT_ID = "event_id"
         private const val COL_CALENDAR_ID = "calendar_id"
         private const val COL_CALENDAR_DISPLAY_NAME = "calendar_displayName"
