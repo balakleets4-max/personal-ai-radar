@@ -1,6 +1,6 @@
 # Personal AI Radar — project status
 
-_Last updated: 2026-06-02_
+_Last updated: 2026-06-04_
 
 ## Repository
 
@@ -96,7 +96,23 @@ Decision:
 - `eff6b9c` — Run emulator smoke script from file
 - `f8417a2` — Avoid false positive smoke crash detection
 
+## Important recent app/frontend commits
+
+- `94c418b` — Update launcher icon resources
+  - Replaced the adaptive launcher icon source with the user's AI Radar lighthouse concept artwork.
+  - Added `src/main/res/drawable-nodpi/ic_launcher_ai_radar.webp`.
+  - Updated `src/main/res/mipmap-anydpi-v26/ic_launcher.xml` and `ic_launcher_round.xml` to use the new artwork.
+  - Status: committed to `main`, needs APK build / clean-install verification on a phone.
+
 ## Last known app testing context
+
+### Build 254 / Android Build #272 observations
+
+Frontend/UI:
+
+- Launcher icon mismatch was reported: the app icon on the Android launcher did not match the AI Radar icon concept sent by the user.
+- Fix committed in `94c418b`.
+- Verification still needed: build fresh APK, uninstall the old app, install the fresh APK, and confirm the launcher icon changed on the phone.
 
 ### Build 200 observations
 
@@ -133,22 +149,37 @@ Known issues:
 
 ## Current next priority
 
-Return from infrastructure work to app logic.
+Verify the frontend launcher icon fix, then return to app logic.
 
-Recommended next task:
+Recommended next tasks:
 
 ```text
+P1: Verify launcher icon fix after clean APK install.
 P1: Fix Russian date parsing for “26 августа” in captures like:
 “съездить к родителям на дачу 26 августа”
 ```
 
-Acceptance criteria:
+Acceptance criteria for launcher icon fix:
+
+- Fresh APK builds successfully after `94c418b`.
+- Old app is uninstalled before test install.
+- New APK is installed cleanly.
+- Android launcher shows the AI Radar lighthouse icon from the user's concept image.
+- No old vector launcher icon is visible.
+
+Acceptance criteria for date parsing fix:
 
 - The parser detects day `26` and month `августа` as one date expression.
 - The year is resolved consistently using the current date/context.
 - The resulting RadarCard has a valid due date.
 - The fix should not break existing relative date parsing such as `завтра` and `через месяц`.
 - Add or update tests for this phrase.
+
+## Cross-project coordination rules
+
+- After any completed frontend/UI, testing, architecture, APK, or app-logic work that changes project state, update this file immediately.
+- When handing work to another project/chat/department, include the destination and a ready-to-copy message for that project/chat.
+- Keep this file as the shared source of truth so parallel project chats do not duplicate or overwrite each other's work.
 
 ## How future AI assistants should use this file
 
