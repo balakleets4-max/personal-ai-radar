@@ -124,7 +124,7 @@ interface RadarCardDao {
     suspend fun snoozeCard(cardId: Long, until: Long, now: Long)
 
     @Query("UPDATE radar_cards SET dueAt = :dueAt, updatedAt = :now WHERE id = :cardId")
-    suspend fun updateDueDate(cardId: Long?, dueAt: Long?, now: Long)
+    suspend fun updateDueDate(cardId: Long, dueAt: Long?, now: Long)
 
     @Query("UPDATE radar_cards SET hasReminder = :hasReminder, updatedAt = :now WHERE id = :cardId")
     suspend fun setHasReminder(cardId: Long, hasReminder: Boolean, now: Long)
