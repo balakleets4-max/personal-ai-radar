@@ -104,6 +104,15 @@ Decision:
   - Updated `src/main/res/mipmap-anydpi-v26/ic_launcher.xml` and `ic_launcher_round.xml` to use the new artwork.
   - Status: committed to `main`, needs APK build / clean-install verification on a phone.
 
+## Important recent backend commits
+
+- `58fef86` — Fix build 254 Russian date parser.
+- `8ff7197` — Support spoken dates and date ranges.
+- `df1f2b3` — Add build 254 range and event date tests.
+- `c5071c1` — Keep radar card due date id non-null / fix Room query issue.
+- `e86d168` — Expand calendar sync window and suppress holiday noise.
+- `d712dd6` — Clamp calendar sync window to 30 days.
+
 ## Last known app testing context
 
 ### Build 254 / Android Build #272 observations
@@ -113,6 +122,22 @@ Frontend/UI:
 - Launcher icon mismatch was reported: the app icon on the Android launcher did not match the AI Radar icon concept sent by the user.
 - Fix committed in `94c418b`.
 - Verification still needed: build fresh APK, uninstall the old app, install the fresh APK, and confirm the launcher icon changed on the phone.
+
+Backend / CalendarSync:
+
+- Google Calendar event `День петуха тест 1` on 30 June 21:30–22:30 did not appear in AI Radar when the phone date was 4 June.
+- Cause found: older manual import path still used a 14-day sync window while CalendarSourceReader was being moved toward a wider window.
+- Current backend behavior after latest fixes: CalendarSourceReader enforces at least a 30-day window and a limit of at least 120 items.
+- All-day holiday noise such as `День России` is filtered in CalendarSourceReader.
+- Google Tasks / Задачи are not supported by this CalendarContract-based module yet and should be treated as unsupported, not as a calendar sync bug.
+
+Backend / DateTime:
+
+- Text `съездить к родителям на дачу 26 августа` works.
+- Voice-style date `съездить к родителям на дачу двадцать шестого августа` works after parser fixes.
+- Relative date `съездить к родителям через месяц` now uses a sane default time, expected `09:00`.
+- `день влюбленных в час дня` recognizes `13:00`, but holiday/event knowledge is not yet a real feature. Do not claim known-event dates unless a clear event database exists.
+- Date ranges are still fragile and should move toward a proper Temporal Engine instead of more one-off regex patches.
 
 ### Build 200 observations
 
@@ -130,34 +155,41 @@ Not proven yet:
 
 - Reliable background calendar sync after process kill, reboot, or long device sleep.
 
-Known issues:
+Known issues carried forward:
 
-1. **Date parsing bug: “26 августа”**
-   - Phrase: `съездить к родителям на дачу 26 августа`
-   - Expected: card should receive a date for 26 August with month/year resolved.
-   - Actual in build 200: `26` was lost, month/year were not assigned correctly, and the card was created without a proper date.
-   - Current priority: **P1**.
+1. **Temporal engine is not unified yet**
+   - Current DateTime parsing has many local fixes.
+   - Needed: one `TemporalResult` / `TemporalEngine` used by diagnostics, AI Resolution, RadarCard creation, and notification scheduling.
 
-2. **Odd default time on reschedule**
-   - Phrase sequence included `съездить к родителям завтра`, then `съездить к родителям через месяц`.
-   - AI Resolution correctly suggested update_existing and avoided duplicates.
-   - But after replacing, the resulting date used a strange/current-like time instead of expected default `09:00`.
+2. **Date ranges remain fragile**
+   - Example: `день китаец с пятого мая по седьмое мая` should produce start and end dates.
+   - Current implementation may not represent ranges as first-class data.
 
-3. **Calendar noise**
-   - All-day holiday `День России` remains as an active Radar card with priority 4.
-   - Needs filtering or lower-priority handling later.
+3. **Known holidays/events are not supported as a real knowledge base**
+   - Example: `день влюбленных в час дня` should not automatically claim a holiday date unless an explicit event database is added.
+
+4. **Calendar background sync not fully proven**
+   - Manual/foreground import works better than background reliability.
+   - Still needs testing after process kill, reboot, and long idle.
 
 ## Current next priority
-
-Verify the frontend launcher icon fix, then return to app logic.
 
 Recommended next tasks:
 
 ```text
-P1: Verify launcher icon fix after clean APK install.
-P1: Fix Russian date parsing for “26 августа” in captures like:
-“съездить к родителям на дачу 26 августа”
+P1: Run CI after latest backend/frontend changes and verify APK.
+P1: Test CalendarSync with a user event 26 days ahead, e.g. “День петуха тест 1” on 30 June.
+P1: Verify launcher icon after clean install.
+P1: Design a real TemporalResult / TemporalEngine instead of adding more regex patches.
 ```
+
+Acceptance criteria for CalendarSync fix:
+
+- Fresh APK builds successfully after `d712dd6`.
+- Manual calendar import reads at least the next 30 days.
+- A user timed event 26 days ahead appears in AI Radar.
+- All-day holiday noise such as `День России` does not appear as an active Radar card.
+- Google Tasks remain clearly unsupported by the calendar module.
 
 Acceptance criteria for launcher icon fix:
 
@@ -167,13 +199,11 @@ Acceptance criteria for launcher icon fix:
 - Android launcher shows the AI Radar lighthouse icon from the user's concept image.
 - No old vector launcher icon is visible.
 
-Acceptance criteria for date parsing fix:
+Acceptance criteria for future Temporal Engine:
 
-- The parser detects day `26` and month `августа` as one date expression.
-- The year is resolved consistently using the current date/context.
-- The resulting RadarCard has a valid due date.
-- The fix should not break existing relative date parsing such as `завтра` and `через месяц`.
-- Add or update tests for this phrase.
+- One parser output object is shared by diagnostics, AI Resolution, RadarCard, and notification scheduler.
+- The output includes start date/time, optional end date/time, range flag, all-day flag, confidence, source text, normalized text, missing parts, and reason.
+- Manual text, voice text, local parser output, and Yandex AI result are reconciled into the same result type.
 
 ## Cross-project coordination rules
 
