@@ -98,12 +98,24 @@ Decision:
 
 ## Important recent app/frontend commits
 
+- `781f4fc` — Use drawable foreground for round launcher icon
+  - Fixes the crash found in Android Emulator Smoke Test #30.
+  - Cause: adaptive icon XML used `@android:color/transparent` as `<foreground>`, but Android required a drawable resource there and threw `Resources$NotFoundException` / `XmlPullParserException` for `ic_launcher_round`.
+  - `ic_launcher_round.xml` now uses `@drawable/ic_launcher_transparent_foreground`.
+  - Status: committed to `main`, needs CI rerun.
+
+- `c1cf3ce` — Use drawable foreground for adaptive launcher icon
+  - `ic_launcher.xml` now uses `@drawable/ic_launcher_transparent_foreground` instead of `@android:color/transparent`.
+
+- `4e73a0a` — Add transparent launcher foreground drawable
+  - Adds `src/main/res/drawable/ic_launcher_transparent_foreground.xml` as a valid transparent drawable for adaptive launcher foreground.
+
 - `72533e6` — Fix launcher icon resource routing
   - Build 254 / Android Build #281 showed that the previous launcher icon fix was not enough.
   - Restored `android:roundIcon="@mipmap/ic_launcher_round"` in `src/main/AndroidManifest.xml`.
   - Routed both adaptive launcher resources to `@drawable/ic_launcher_ai_radar` with transparent foreground.
   - Added density-specific `mipmap-mdpi/hdpi/xhdpi/xxhdpi/xxxhdpi` XML launcher resources so fallback launcher paths also resolve to the AI Radar image.
-  - Status: committed to `main`, needs fresh APK build and clean-install verification on phone.
+  - Status: superseded by `4e73a0a`, `c1cf3ce`, and `781f4fc` because smoke test #30 found the transparent foreground resource was invalid.
 
 - `94c418b` — Update launcher icon resources
   - Added `src/main/res/drawable-nodpi/ic_launcher_ai_radar.webp` from the user's AI Radar lighthouse concept artwork.
@@ -120,6 +132,20 @@ Decision:
 - `d712dd6` — Clamp calendar sync window to 30 days.
 
 ## Last known app testing context
+
+### Android Emulator Smoke Test #30 observations
+
+Frontend/UI:
+
+- Smoke Test #30 failed after `72533e6`.
+- APK built successfully, installed successfully, and launch command was issued.
+- App process exited after deterministic `MainActivity` launch.
+- Logcat root cause:
+  - `Resources$NotFoundException: Drawable com.personalradar.app:mipmap/ic_launcher_round`
+  - `XmlPullParserException: <foreground> or <background> tag requires a 'drawable' attribute or child tag defining a drawable`
+- Diagnosis: `@android:color/transparent` was not accepted as adaptive icon foreground in this runtime path.
+- Fix committed in `4e73a0a`, `c1cf3ce`, and `781f4fc`.
+- Required next check: rerun Android Emulator Smoke Test and Android Build after `781f4fc`.
 
 ### Build 254 / Android Build #281 observations
 
@@ -174,7 +200,8 @@ Known issues carried forward:
 
 1. **Launcher icon still needs visual verification**
    - Build #281 proved the previous fix was not sufficient.
-   - Do not close this bug until a fresh APK after `72533e6` visually matches the user's original AI Radar icon.
+   - Smoke Test #30 proved the follow-up resource routing fix caused a runtime crash until the adaptive icon foreground was changed to a real drawable.
+   - Do not close this bug until a fresh APK after `781f4fc` launches successfully and visually matches the user's original AI Radar icon.
 
 2. **Temporal engine is not unified yet**
    - Current DateTime parsing has many local fixes.
@@ -196,7 +223,8 @@ Known issues carried forward:
 Recommended next tasks:
 
 ```text
-P1: Run Android Build after `72533e6` and verify the APK.
+P1: Rerun Android Emulator Smoke Test after `781f4fc`.
+P1: Run Android Build after `781f4fc` and verify the APK.
 P1: Test launcher icon after clean install on a phone: launcher, app list, and system app info.
 P1: Test CalendarSync with a user event 26 days ahead, e.g. “День петуха тест 1” on 30 June.
 P1: Design a real TemporalResult / TemporalEngine instead of adding more regex patches.
@@ -204,7 +232,8 @@ P1: Design a real TemporalResult / TemporalEngine instead of adding more regex p
 
 Acceptance criteria for launcher icon fix:
 
-- Fresh APK builds successfully after `72533e6`.
+- Fresh APK builds successfully after `781f4fc`.
+- Android Emulator Smoke Test is green after `781f4fc`.
 - Old app is uninstalled before test install.
 - New APK is installed cleanly.
 - Android launcher shows the AI Radar lighthouse icon from the user's original concept image.
