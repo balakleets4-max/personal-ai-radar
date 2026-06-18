@@ -2,6 +2,6 @@
 <resources>
     <style name="Theme.PersonalAiRadar.Starting" parent="Theme.PersonalAiRadar">
         <item name="android:windowSplashScreenBackground">@color/splash_background</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_splash_transparent</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
     </style>
 </resources>
