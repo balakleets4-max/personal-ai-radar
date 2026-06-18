@@ -8,54 +8,45 @@ _Last updated: 2026-06-04_
 
 Latest frontend commits:
 
+- `0064bf1` — Adjust Android splash theme.
+- `82321d8` — Polish launcher icon splash and first launch UX.
 - `8461d0f` — Fix Android 12 splash resource linking.
-- `28c276b` — Use high resolution launcher drawable and splash theme.
 - `8dbf913` — Crop launcher icon to central artwork.
 
-Current state from user testing:
+Current state from phone testing:
 
-- App launches without crash before the splash-theme change.
+- APK installs cleanly.
+- App launches without crash.
+- First launch opens the app and does not immediately open Android settings.
+- Main screen text is readable.
 - Old placeholder icon is gone.
 - Text inside the icon is removed.
-- Central lighthouse artwork appears.
-- Bug is **not closed** because the icon still looks blurry and the Android launch transition shows a large blurry intermediate icon.
+- Lighthouse artwork is used.
+- Bug is **not closed** because splash still showed a large blurry intermediate icon before `0064bf1`.
+- Final launcher icon quality still needs a separate large-view check outside a folder.
 
-CI finding after `28c276b`:
+What changed in `0064bf1`:
 
-- Android Build failed at `:processDebugResources`.
-- Cause: `values-v31/styles.xml` used `android:postSplashScreenTheme`, but resource linking reported `android:attr/postSplashScreenTheme` not found.
-- Fix committed in `8461d0f`: removed the unsupported `android:postSplashScreenTheme` item. The starting theme already inherits from the normal app theme.
-
-What changed in latest frontend work:
-
-- Manifest routes `android:icon` and `android:roundIcon` directly to `@drawable/ic_launcher_ai_radar` so launcher/app-info paths use the higher-resolution cropped source.
-- Added `Theme.PersonalAiRadar.Starting` and Android 12+ splash configuration.
-- Added a transparent splash animated icon to avoid showing the launcher icon enlarged and blurry during app startup.
-- Added `splash_background` color.
+- Android 12+ splash no longer uses launcher foreground artwork as `windowSplashScreenAnimatedIcon`.
+- Splash now uses the existing transparent splash drawable with the same light background as the app.
+- Goal: remove the large blurry intermediate icon and make startup feel like a short neutral transition.
 
 Required verification:
 
-- Run Android Build after `8461d0f`.
-- Run Android Emulator Smoke Test after `8461d0f`.
+- Run Android Build after `0064bf1`.
+- Run Android Emulator Smoke Test after `0064bf1`.
 - Install APK cleanly on a phone.
-- Check icon on launcher, app list, and Android app info.
-- Start the app from the launcher and confirm there is no large blurry intermediate icon.
+- Start app from launcher and confirm there is no large blurry splash icon.
+- Check launcher icon separately on home screen, app list, installer, and Android app info.
 
 Acceptance criteria:
 
 - App builds successfully.
 - App launches without crash.
-- Launcher icon is visually sharper than the previous build.
-- Splash transition is clean and does not show a large blurry icon.
-- No old vector icon, fallback placeholder, poster-with-text asset, or broken launcher XML is visible.
-
-## Recent launcher history
-
-- `8dbf913` — cropped launcher icon to central artwork; fixed internal text but quality still needed improvement.
-- `95f5e0a` — rebuilt launcher assets, but text remained in the icon.
-- `7e9ef34` — removed launcher crash path, but visual icon stayed wrong.
-- Earlier crash mitigation commits: `8269b7d`, `4e4cca8`, `781f4fc`, `c1cf3ce`, `4e73a0a`.
-- Earlier icon attempts: `72533e6`, `94c418b`.
+- Splash transition does not show a large blurry icon.
+- Main screen text remains readable.
+- First launch stays in app unless the user chooses a settings action.
+- Launcher icon is acceptable in full-size phone verification.
 
 ## Backend status summary
 
@@ -70,7 +61,7 @@ Recent backend commits still known:
 
 ## Known open issues
 
-1. Launcher icon and splash need verification after `8461d0f`.
+1. Launcher icon / splash needs verification after `0064bf1`.
 2. Temporal engine is not unified yet.
 3. Date ranges remain fragile.
 4. Known holidays/events are not a real feature yet.
@@ -79,10 +70,10 @@ Recent backend commits still known:
 ## Current next priority
 
 ```text
-P1: Run Android Build after 8461d0f.
-P1: Run Android Emulator Smoke Test after 8461d0f.
-P1: Test launcher icon quality after clean phone install.
-P1: Test Android startup transition and confirm no blurry splash icon.
+P1: Run Android Build after 0064bf1.
+P1: Run Android Emulator Smoke Test after 0064bf1.
+P1: Test splash after clean phone install.
+P1: Test launcher icon separately outside a folder.
 P1: Then return to CalendarSync and Temporal Engine work.
 ```
 
