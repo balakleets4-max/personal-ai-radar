@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.PersonalAiRadar.Starting" parent="Theme.PersonalAiRadar">
+        <item name="android:windowSplashScreenBackground">@color/splash_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_splash_transparent</item>
+        <item name="android:postSplashScreenTheme">@style/Theme.PersonalAiRadar</item>
+    </style>
+</resources>
