@@ -21,18 +21,7 @@ Capture → Analysis → RadarCard → Action → Memory Update → Reflection
 
 ## Current architecture snapshot
 
-Main planned/active modules:
-
-- `ui`
-- `viewmodel`
-- `domain`
-- `data`
-- `parser`
-- `radar`
-- `notifications`
-- `permissions`
-- `settings`
-- `testing`
+Main planned/active modules: `ui`, `viewmodel`, `domain`, `data`, `parser`, `radar`, `notifications`, `permissions`, `settings`, `testing`.
 
 Important v0.1 concepts:
 
@@ -69,12 +58,18 @@ From `Android Build`:
 
 ## Important recent frontend/UI commits
 
+- `95f5e0a` — Rebuild launcher icon assets
+  - Current launcher icon asset fix after user confirmed that APK after `7e9ef34` launches but still does not show the original AI Radar icon.
+  - Restored manifest routing to `@mipmap/ic_launcher` and `@mipmap/ic_launcher_round`.
+  - Replaced `src/main/res/drawable-nodpi/ic_launcher_ai_radar.webp` with an asset generated from the original user image.
+  - Added real image launcher assets for `mipmap-mdpi`, `mipmap-hdpi`, `mipmap-xhdpi`, `mipmap-xxhdpi`, and `mipmap-xxxhdpi` instead of unsafe `<bitmap>` XML aliases.
+  - Added valid adaptive icon XML for Android 8+ using `@color/ic_launcher_background` and `@mipmap/ic_launcher_foreground`.
+  - Removed density-specific launcher XML aliases that previously crashed with `XmlPullParserException: <bitmap> requires a valid 'src' attribute`.
+  - Status: committed to `main`, needs Android Build + Emulator Smoke Test + clean phone install verification.
+
 - `7e9ef34` — Route launcher icon directly to drawable
-  - Latest mitigation after Smoke Test still crashed on `8269b7d`.
-  - Manifest no longer routes through `@mipmap/ic_launcher` / `@mipmap/ic_launcher_round`.
-  - Manifest now points both `android:icon` and `android:roundIcon` directly to `@drawable/ic_launcher_ai_radar`.
-  - Reason: logs showed system startup was loading `mipmap-xxhdpi-v4/ic_launcher_round.xml`; `<bitmap>` XML failed with `XmlPullParserException: <bitmap> requires a valid 'src' attribute`.
-  - Status: committed to `main`, needs CI rerun.
+  - Fixed crash route enough that the app launched, but the visual icon was still wrong after user APK testing.
+  - Superseded by `95f5e0a`.
 
 - `8269b7d` — Remove crashing adaptive round launcher icon
   - Removed `src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml`.
@@ -84,26 +79,16 @@ From `Android Build`:
   - Removed `src/main/res/mipmap-anydpi-v26/ic_launcher.xml`.
   - Status: insufficient; density-specific XML fallback still crashed.
 
-- `781f4fc` — Use drawable foreground for round launcher icon
-  - Tried replacing `@android:color/transparent` with `@drawable/ic_launcher_transparent_foreground`.
-  - Superseded by deleting adaptive icon XML and then direct drawable routing.
-
-- `c1cf3ce` — Use drawable foreground for adaptive launcher icon
-  - Tried using drawable transparent foreground for adaptive icon.
-  - Superseded.
-
-- `4e73a0a` — Add transparent launcher foreground drawable
-  - Added `src/main/res/drawable/ic_launcher_transparent_foreground.xml`.
-  - Superseded for launcher routing.
+- `781f4fc` / `c1cf3ce` / `4e73a0a` — transparent foreground attempts
+  - Superseded by later launcher asset rebuild.
 
 - `72533e6` — Fix launcher icon resource routing
   - Restored `android:roundIcon` and added density-specific XML launcher resources.
   - Status: caused/surfaced launcher icon XML crashes in smoke tests; superseded.
 
 - `94c418b` — Update launcher icon resources
-  - Added `src/main/res/drawable-nodpi/ic_launcher_ai_radar.webp` from the user's AI Radar lighthouse concept artwork.
-  - Status: original image resource exists, but launcher routing remained unstable until later fixes.
-  - Do not mark launcher icon fixed until it visually matches the user's original image after clean install.
+  - Added the first `ic_launcher_ai_radar.webp` attempt.
+  - Status: visually insufficient; superseded.
 
 ## Important recent backend commits
 
@@ -116,6 +101,14 @@ From `Android Build`:
 
 ## Last known app testing context
 
+### After `7e9ef34`
+
+Frontend/UI:
+
+- User verified APK after `7e9ef34`: app launches, so launcher-icon crash appears resolved.
+- Visual bug remains: original AI Radar icon is still not displayed.
+- Current response: `95f5e0a` rebuilds launcher icon assets from the original user image and restores proper mipmap/adaptive resources.
+
 ### Android Emulator Smoke Test after `8269b7d`
 
 Frontend/UI:
@@ -127,9 +120,7 @@ Frontend/UI:
   - `Resources$NotFoundException: Drawable com.personalradar.app:mipmap/ic_launcher_round`
   - `File res/mipmap-xxhdpi-v4/ic_launcher_round.xml from drawable resource ID #0x7f090001`
   - `XmlPullParserException: <bitmap> requires a valid 'src' attribute`
-- Diagnosis: removing `mipmap-anydpi-v26` adaptive XML was not enough because density-specific `mipmap-*dpi/ic_launcher_round.xml` XML files were still being packaged and loaded during startup.
-- Mitigation committed in `7e9ef34`: bypass mipmap launcher XML entirely by pointing Manifest directly to `@drawable/ic_launcher_ai_radar`.
-- Required next check: rerun Android Emulator Smoke Test and Android Build after `7e9ef34`.
+- Diagnosis: density-specific `mipmap-*dpi/ic_launcher_round.xml` XML files were still being packaged and loaded during startup.
 
 ### Build 254 / Android Build #281 observations
 
@@ -138,7 +129,6 @@ Frontend/UI:
 - Launcher icon bug is **not fixed** in Build 254 / Android Build #281.
 - APK icon still did not match the user's original AI Radar concept image: lighthouse + glowing road / pulse line / “Линия спасения” concept.
 - Previous frontend fix `94c418b` is considered insufficient.
-- Verification required: build fresh APK, uninstall old app, install fresh APK, and compare launcher / app list / system app info icon visually against the user's original.
 
 ### Build 254 / Android Build #272 observations
 
@@ -158,28 +148,13 @@ Backend / DateTime:
 - `день влюбленных в час дня` recognizes `13:00`, but holiday/event knowledge is not yet a real feature. Do not claim known-event dates unless a clear event database exists.
 - Date ranges are still fragile and should move toward a proper Temporal Engine instead of more one-off regex patches.
 
-### Build 200 observations
-
-Working:
-
-- APK installed and launched.
-- Diagnostics / permissions screen worked.
-- Calendar import worked in the tested foreground/open-app scenario.
-- Voice capture worked.
-- Similar-note search worked.
-- AI Resolution update/reschedule flow worked in basic tests.
-- Calendar delete lifecycle worked for the tested case: create event in Google Calendar → import into AI Radar → delete in Google Calendar → card disappears from AI Radar after refresh/reopen.
-
-Not proven yet:
-
-- Reliable background calendar sync after process kill, reboot, or long device sleep.
-
 ## Known issues carried forward
 
 1. **Launcher icon still needs visual verification**
    - Build #281 proved the visual icon bug was not fixed.
    - Smoke tests proved launcher icon XML resources can crash the app during startup.
-   - Do not close this bug until fresh APK after `7e9ef34` launches successfully and visually matches the user's original AI Radar icon.
+   - `7e9ef34` allowed the app to launch but did not fix the visual icon.
+   - Do not close this bug until fresh APK after `95f5e0a` launches successfully and visually matches the user's original AI Radar icon.
 
 2. **Temporal engine is not unified yet**
    - Current DateTime parsing has many local fixes.
@@ -201,8 +176,8 @@ Not proven yet:
 Recommended next tasks:
 
 ```text
-P1: Rerun Android Emulator Smoke Test after `7e9ef34`.
-P1: Run Android Build after `7e9ef34` and verify APK artifact.
+P1: Run Android Build after `95f5e0a` and verify APK artifact.
+P1: Run Android Emulator Smoke Test after `95f5e0a` and confirm no launcher-icon crash.
 P1: Test launcher icon after clean install on a phone: launcher, app list, and system app info.
 P1: Test CalendarSync with a user event 26 days ahead, e.g. “День петуха тест 1” on 30 June.
 P1: Design a real TemporalResult / TemporalEngine instead of adding more regex patches.
@@ -210,14 +185,14 @@ P1: Design a real TemporalResult / TemporalEngine instead of adding more regex p
 
 Acceptance criteria for launcher icon fix:
 
-- Fresh APK builds successfully after `7e9ef34`.
-- Android Emulator Smoke Test is green after `7e9ef34`.
+- Fresh APK builds successfully after `95f5e0a`.
+- Android Emulator Smoke Test is green after `95f5e0a`.
 - Old app is uninstalled before test install.
 - New APK is installed cleanly.
 - Android launcher shows the AI Radar lighthouse icon from the user's original concept image.
 - App list shows the same AI Radar icon.
 - System app info shows the same AI Radar icon.
-- No old vector launcher icon or fallback/safe placeholder is visible.
+- No old vector icon, safe placeholder, or broken launcher XML is visible.
 - Bug is not closed unless the icon visually matches the user's original image.
 
 Acceptance criteria for CalendarSync fix:
