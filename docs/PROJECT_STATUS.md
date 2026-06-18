@@ -4,41 +4,50 @@ _Last updated: 2026-06-04_
 
 ## Current frontend status
 
-### Launcher icon P1
+### Launcher icon / Splash P1
 
-Latest frontend commit:
+Latest frontend commits:
 
+- `28c276b` — Use high resolution launcher drawable and splash theme.
 - `8dbf913` — Crop launcher icon to central artwork.
 
-What changed:
+Current state from user testing:
 
-- The app icon crash had already been removed.
-- The old placeholder icon had already been removed.
-- The remaining bug was that the launcher icon still contained text from the source poster.
-- `8dbf913` replaces launcher image assets with a crop of the central artwork only.
-- Expected icon content: lighthouse plus glowing road / pulse line.
-- The icon must not contain internal text.
+- App launches without crash.
+- Old placeholder icon is gone.
+- Text inside the icon is removed.
+- Central lighthouse artwork appears.
+- Bug is **not closed** because the icon still looks blurry and the Android launch transition shows a large blurry intermediate icon.
+
+What changed in latest frontend work:
+
+- Manifest now routes `android:icon` and `android:roundIcon` directly to `@drawable/ic_launcher_ai_radar` so launcher/app-info paths use the higher-resolution cropped source instead of the small density-scaled mipmap output.
+- Added `Theme.PersonalAiRadar.Starting` and Android 12+ splash configuration.
+- Added a transparent splash animated icon to avoid showing the launcher icon enlarged and blurry during app startup.
+- Added `splash_background` color.
 
 Required verification:
 
-- Run Android Build after `8dbf913`.
-- Run Android Emulator Smoke Test after `8dbf913`.
+- Run Android Build after `28c276b`.
+- Run Android Emulator Smoke Test after `28c276b`.
 - Install APK cleanly on a phone.
 - Check icon on launcher, app list, and Android app info.
+- Start the app from the launcher and confirm there is no large blurry intermediate icon.
 
 Acceptance criteria:
 
 - App launches without crash.
-- Icon shows only the central artwork.
-- No poster title or subtitle is visible inside the icon.
-- No old vector icon or fallback placeholder is visible.
+- Launcher icon is visually sharper than the previous build.
+- Splash transition is clean and does not show a large blurry icon.
+- No old vector icon, fallback placeholder, poster-with-text asset, or broken launcher XML is visible.
 
 ## Recent launcher history
 
+- `8dbf913` — cropped launcher icon to central artwork; fixed internal text but quality still needed improvement.
 - `95f5e0a` — rebuilt launcher assets, but text remained in the icon.
 - `7e9ef34` — removed launcher crash path, but visual icon stayed wrong.
-- `8269b7d`, `4e4cca8`, `781f4fc`, `c1cf3ce`, `4e73a0a` — earlier crash mitigation attempts.
-- `72533e6` and `94c418b` — earlier icon attempts, superseded.
+- Earlier crash mitigation commits: `8269b7d`, `4e4cca8`, `781f4fc`, `c1cf3ce`, `4e73a0a`.
+- Earlier icon attempts: `72533e6`, `94c418b`.
 
 ## Backend status summary
 
@@ -53,7 +62,7 @@ Recent backend commits still known:
 
 ## Known open issues
 
-1. Launcher icon needs verification after `8dbf913`.
+1. Launcher icon and splash need verification after `28c276b`.
 2. Temporal engine is not unified yet.
 3. Date ranges remain fragile.
 4. Known holidays/events are not a real feature yet.
@@ -62,9 +71,10 @@ Recent backend commits still known:
 ## Current next priority
 
 ```text
-P1: Run Android Build after 8dbf913.
-P1: Run Android Emulator Smoke Test after 8dbf913.
-P1: Test launcher icon after clean phone install.
+P1: Run Android Build after 28c276b.
+P1: Run Android Emulator Smoke Test after 28c276b.
+P1: Test launcher icon quality after clean phone install.
+P1: Test Android startup transition and confirm no blurry splash icon.
 P1: Then return to CalendarSync and Temporal Engine work.
 ```
 
