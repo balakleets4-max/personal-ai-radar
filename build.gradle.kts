@@ -1,7 +1,7 @@
 import java.util.Properties
 
 plugins {
-    id("com.android.application") version "8.7.3"
+    id("com.android.application") version "9.2.1"
     id("org.jetbrains.kotlin.android") version "2.0.21"
     id("org.jetbrains.kotlin.kapt") version "2.0.21"
     id("com.google.gms.google-services") version "4.4.4"
@@ -81,7 +81,7 @@ dependencies {
     val lifecycleVersion = "2.8.7"
     val workVersion = "2.10.0"
 
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:$lifecycleVersion")
