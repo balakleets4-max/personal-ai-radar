@@ -94,7 +94,7 @@ dependencies {
     implementation("com.alphacephei:vosk-android:0.3.75")
     implementation("io.sentry:sentry-android:7.22.6")
 
-    implementation(platform("com.google.firebase:firebase-bom:34.14.0"))
+    implementation(platform("com.google.firebase:firebase-bom:34.14.1"))
     implementation("com.google.firebase:firebase-crashlytics")
 
     testImplementation("junit:junit:4.13.2")
