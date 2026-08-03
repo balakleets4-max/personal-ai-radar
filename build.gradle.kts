@@ -77,13 +77,13 @@ android {
 }
 
 dependencies {
-    val roomVersion = "2.6.1"
-    val lifecycleVersion = "2.8.7"
+    val roomVersion = "2.8.4"
+    val lifecycleVersion = "2.11.0"
     val workVersion = "2.10.0"
 
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 
-    implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.core:core-ktx:1.19.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:$lifecycleVersion")
     implementation("androidx.work:work-runtime-ktx:$workVersion")
 
@@ -99,6 +99,6 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("androidx.room:room-testing:$roomVersion")
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
 }
